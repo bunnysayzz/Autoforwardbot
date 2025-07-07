@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { handleMessage } from '../../../../scripts/bot';
 import { isAdmin } from '../../../../lib/telegram';
 import { Update } from 'node-telegram-bot-api';
+import { loadChannels } from '../../../../lib/storage';
 
 // Validate webhook secret
 function validateSecret(request: NextRequest): boolean {
@@ -27,6 +28,11 @@ export const fetchCache = 'force-no-store';
 // The webhook route only receives updates and queues them for processing
 export async function POST(request: NextRequest) {
   console.log('Webhook POST request received');
+  console.log('Environment:', {
+    isVercel: process.env.VERCEL === '1',
+    nodeEnv: process.env.NODE_ENV,
+    botUsername: process.env.BOT_USERNAME
+  });
   
   // Validate the secret token
   if (!validateSecret(request)) {
@@ -67,9 +73,18 @@ export async function POST(request: NextRequest) {
         );
       }
       
+      // Check current storage state
+      const currentChannels = loadChannels();
+      console.log('Current stored channels:', currentChannels);
+      
       // Handle the message
       console.log('Processing message from admin user');
       await handleMessage(update.message);
+      
+      // Check if storage changed
+      const updatedChannels = loadChannels();
+      console.log('Updated stored channels:', updatedChannels);
+      
       return NextResponse.json(
         { success: true },
         {
@@ -109,6 +124,11 @@ export async function POST(request: NextRequest) {
 // Required for Vercel
 export async function GET(request: NextRequest) {
   console.log('Webhook GET request received');
+  console.log('Environment:', {
+    isVercel: process.env.VERCEL === '1',
+    nodeEnv: process.env.NODE_ENV,
+    botUsername: process.env.BOT_USERNAME
+  });
   
   if (!validateSecret(request)) {
     console.error('Invalid webhook secret on GET request');
@@ -124,9 +144,17 @@ export async function GET(request: NextRequest) {
     );
   }
   
+  // Check current storage state
+  const currentChannels = loadChannels();
+  console.log('Current stored channels:', currentChannels);
+  
   console.log('Valid webhook GET request - endpoint is active');
   return NextResponse.json(
-    { status: 'Telegram webhook endpoint is active', bot: process.env.BOT_USERNAME },
+    { 
+      status: 'Telegram webhook endpoint is active', 
+      bot: process.env.BOT_USERNAME,
+      channels: currentChannels.length
+    },
     {
       headers: {
         'Content-Type': 'application/json',
