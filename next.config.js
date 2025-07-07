@@ -13,8 +13,15 @@ const nextConfig = {
   // Avoid processing external dependencies for Edge runtime
   experimental: {
     serverActions: {
-      allowedOrigins: ['localhost:3000'],
+      allowedOrigins: ['localhost:3000', 'autoforward-jade.vercel.app'],
     },
+    // Enable serverComponentsExternalPackages for better module handling
+    serverComponentsExternalPackages: ['node-telegram-bot-api'],
+  },
+  // Explicitly set the runtime for API routes
+  serverRuntimeConfig: {
+    // Will only be available on the server side
+    PROJECT_ROOT: __dirname,
   },
 };
 
