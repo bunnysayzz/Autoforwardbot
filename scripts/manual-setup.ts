@@ -1,25 +1,30 @@
 import 'dotenv/config';
 import axios from 'axios';
 
-// Get configuration from environment variables
-const token = process.env.TELEGRAM_BOT_TOKEN;
-const webhookSecret = process.env.WEBHOOK_SECRET;
-const vercelUrl = process.env.VERCEL_URL || 'autoforward-jade.vercel.app';
+// Get configuration from environment variables or command line arguments
+const token = process.argv[2] || process.env.TELEGRAM_BOT_TOKEN;
+const webhookSecret = process.argv[3] || process.env.WEBHOOK_SECRET;
+const vercelUrl = process.argv[4] || process.env.VERCEL_URL || 'autoforward-jade.vercel.app';
+
+// Remove https:// prefix if present
+const cleanVercelUrl = vercelUrl.replace(/^https?:\/\//, '');
 
 if (!token) {
-  console.error('TELEGRAM_BOT_TOKEN is not defined in the environment variables');
+  console.error('TELEGRAM_BOT_TOKEN is not defined. Please provide it as the first argument.');
+  console.error('Usage: npx ts-node scripts/manual-setup.ts <BOT_TOKEN> <WEBHOOK_SECRET> [VERCEL_URL]');
   process.exit(1);
 }
 
 if (!webhookSecret) {
-  console.error('WEBHOOK_SECRET is not defined in the environment variables');
+  console.error('WEBHOOK_SECRET is not defined. Please provide it as the second argument.');
+  console.error('Usage: npx ts-node scripts/manual-setup.ts <BOT_TOKEN> <WEBHOOK_SECRET> [VERCEL_URL]');
   process.exit(1);
 }
 
 async function setupWebhook() {
   try {
     // Construct the webhook URL with the secret
-    const webhookUrl = `https://${vercelUrl}/api/telegram/webhook?secret=${webhookSecret}`;
+    const webhookUrl = `https://${cleanVercelUrl}/api/telegram/webhook?secret=${webhookSecret}`;
     
     console.log(`Setting webhook to: ${webhookUrl}`);
     
@@ -53,8 +58,16 @@ async function setupWebhook() {
     
     console.log('Set commands response:', commandsResponse.data);
     
+    // Delete webhook (optional, uncomment if needed)
+    // const deleteWebhookUrl = `https://api.telegram.org/bot${token}/deleteWebhook`;
+    // const deleteResponse = await axios.post(deleteWebhookUrl);
+    // console.log('Delete webhook response:', deleteResponse.data);
+    
   } catch (error) {
     console.error('Error setting up webhook:', error);
+    if (axios.isAxiosError(error)) {
+      console.error('Response data:', error.response?.data);
+    }
     process.exit(1);
   }
 }
