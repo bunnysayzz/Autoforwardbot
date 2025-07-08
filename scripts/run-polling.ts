@@ -13,6 +13,7 @@ dotenv.config({ path: '.env.local' });
 import bot from '../lib/telegram';
 import { handleMessage, setupBotCommands } from './bot';
 import { isAdmin, getAdminChannels } from '../lib/telegram';
+import { initializeDb } from '../lib/storage';
 
 // Get configuration from environment variables
 const ADMIN_USER_ID = process.env.ADMIN_USER_ID;
@@ -32,6 +33,9 @@ setupBotCommands();
 // Send a startup message to the admin
 (async () => {
   try {
+    console.log('Initializing database...');
+    await initializeDb();
+    console.log('Database initialized successfully.');
     const message = `🤖 Bot started in polling mode\n\n` +
                    `Commands available:\n` +
                    `- /start - Start the bot and get welcome message\n` +

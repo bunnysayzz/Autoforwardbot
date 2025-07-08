@@ -16,6 +16,8 @@
     "health-check": "ts-node --compiler-options '{\"module\":\"commonjs\"}' scripts/health-check.ts"
   },
   "dependencies": {
+    "@astrajs/collections": "^0.3.4",
+    "@datastax/astra-db-ts": "^2.0.1",
     "axios": "^1.10.0",
     "next": "14.2.3",
     "node-telegram-bot-api": "^0.66.0",

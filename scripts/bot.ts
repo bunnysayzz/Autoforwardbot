@@ -63,7 +63,7 @@ export async function handleMessage(message: Message) {
   // Handle /channel command
   if (message.text?.startsWith('/channel')) {
     try {
-      const storedChannels = loadChannels();
+      const storedChannels = await loadChannels();
       if (storedChannels.length > 0) {
         // Get chat info for each stored channel
         const channelDetails = await Promise.all(storedChannels.map(async (id: string) => {
@@ -159,7 +159,7 @@ export async function handleMessage(message: Message) {
     const channelId = parts[1].trim();
     
     try {
-      removeChannel(channelId);
+      await removeChannel(channelId);
       await bot.sendMessage(
         chatId,
         `✅ Channel ${channelId} has been removed from the forwarding list.`
@@ -188,7 +188,7 @@ export async function handleMessage(message: Message) {
   // Handle /clearfooter command
   if (message.text?.startsWith('/clearfooter')) {
     try {
-      clearFooter();
+      await clearFooter();
       await bot.sendMessage(
         chatId,
         '✅ Footer has been cleared successfully. Messages will be forwarded without a footer.'
@@ -216,7 +216,7 @@ export async function handleMessage(message: Message) {
         footerText = '';
       }
       
-      saveFooter(footerText);
+      await saveFooter(footerText);
       
       awaitingFooter = false;
       await bot.sendMessage(
@@ -245,7 +245,7 @@ export async function handleMessage(message: Message) {
       await bot.sendMessage(chatId, `Forwarding your message to ${channels.length} channels...`);
       
       // Load footer if exists
-      const footer = loadFooter();
+      const footer = await loadFooter();
       
       for (const channel of channels) {
         try {

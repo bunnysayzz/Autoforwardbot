@@ -40,7 +40,7 @@ export async function getAdminChannels(): Promise<Chat[]> {
     const me = await bot.getMe();
     
     // Load stored channel IDs from persistent storage
-    const storedChannelIds = loadChannels();
+    const storedChannelIds = await loadChannels();
     console.log(`Using ${storedChannelIds.length} channels from storage`);
     
     if (storedChannelIds.length === 0) {
@@ -104,7 +104,7 @@ export async function addChannelHint(channelId: string): Promise<void> {
   lastChannelUpdateTime = 0;
   
   // Store in persistent storage
-  addStoredChannel(channelId.trim());
+  await addStoredChannel(channelId.trim());
   
   // Clear cache to force reload
   channelsCache = [];

@@ -1,244 +1,165 @@
-import fs from 'fs';
-import path from 'path';
+import { getCollection, db } from './astra';
 
-// Define the storage file path for local development
-const DATA_DIR = path.join(process.cwd(), 'data');
-const CHANNELS_FILE = path.join(DATA_DIR, 'channels.json');
-const FOOTER_FILE = path.join(DATA_DIR, 'footer.json');
+// Define collection names
+const CHANNELS_COLLECTION = 'channels';
+const FOOTER_COLLECTION = 'footer';
+const FOOTER_DOCUMENT_ID = 'singleton_footer';
 
-// Define the storage data structure
-interface StorageData {
-  channels: string[];
-  lastUpdated: string;
+/**
+ * Initialize the database by creating the 'channels' and 'footer' collections if they don't exist.
+ */
+export async function initializeDb() {
+  try {
+    await db.createCollection(CHANNELS_COLLECTION);
+    console.log(`Collection '${CHANNELS_COLLECTION}' created or already exists.`);
+  } catch (e) {
+    // Assuming error means collection already exists, which is fine.
+    // A more robust implementation would check the error type.
+    console.log(`Collection '${CHANNELS_COLLECTION}' already exists.`);
+  }
+
+  try {
+    await db.createCollection(FOOTER_COLLECTION);
+    console.log(`Collection '${FOOTER_COLLECTION}' created or already exists.`);
+  } catch (e) {
+    console.log(`Collection '${FOOTER_COLLECTION}' already exists.`);
+  }
 }
 
-interface FooterData {
+interface Channel {
+  _id: string; // Using channel ID as the document ID
+}
+
+interface Footer {
+  _id: string;
   text: string;
   lastUpdated: string;
 }
 
-// In-memory storage for Vercel serverless environment
-let memoryChannels: string[] = [];
-let memoryFooter: string = '';
-
-// Check if we're in a Vercel environment
-const isVercel = process.env.VERCEL === '1';
-
-// Initialize storage with default values
-const defaultData: StorageData = {
-  channels: [],
-  lastUpdated: new Date().toISOString()
-};
-
-const defaultFooter: FooterData = {
-  text: '',
-  lastUpdated: new Date().toISOString()
-};
-
-// Ensure data directory exists for local development
-if (!isVercel && !fs.existsSync(DATA_DIR)) {
-  try {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  } catch (error) {
-    console.error('Failed to create data directory:', error);
-  }
-}
-
 /**
- * Load channel data from storage
+ * Load channel data from Astra DB
  */
-export function loadChannels(): string[] {
-  // For Vercel, try to load from environment variable first
-  if (isVercel) {
-    try {
-      // If we have in-memory channels, use those
-      if (memoryChannels.length > 0) {
-        return memoryChannels;
-      }
-      
-      // Try to load from environment variable
-      const envChannels = process.env.STORED_CHANNELS;
-      if (envChannels) {
-        memoryChannels = JSON.parse(envChannels);
-        return memoryChannels;
-      }
-      
-      return [];
-    } catch (error) {
-      console.error('Error loading channels from environment:', error);
-      return [];
-    }
-  }
-  
-  // For local development, use file-based storage
+export async function loadChannels(): Promise<string[]> {
   try {
-    if (!fs.existsSync(CHANNELS_FILE)) {
-      // Initialize with empty data if file doesn't exist
-      fs.writeFileSync(CHANNELS_FILE, JSON.stringify(defaultData, null, 2));
-      return [];
-    }
-
-    const data = JSON.parse(fs.readFileSync(CHANNELS_FILE, 'utf8')) as StorageData;
-    return data.channels || [];
+    const collection = await getCollection(CHANNELS_COLLECTION);
+    // Find all documents, projecting only the _id field
+    const cursor = collection.find<Channel>({}, {
+      projection: {
+        _id: 1,
+      },
+    });
+    const channels = await cursor.toArray();
+    return channels.map((channel: Channel) => channel._id);
   } catch (error) {
-    console.error('Error loading channels from storage:', error);
+    console.error('Error loading channels from Astra DB:', error);
     return [];
   }
 }
 
 /**
- * Save channel data to storage
+ * Save multiple channels to Astra DB (overwrites existing channels).
+ * This is a destructive operation and should be used with caution.
  */
-export function saveChannels(channels: string[]): void {
-  // Remove duplicates and empty strings
-  const filteredChannels = channels.filter(Boolean);
-  const uniqueChannels = Array.from(new Set(filteredChannels));
-  
-  // For Vercel, store in memory
-  if (isVercel) {
-    try {
-      memoryChannels = uniqueChannels;
-      console.log(`Stored ${uniqueChannels.length} channels in memory`);
-      return;
-    } catch (error) {
-      console.error('Error saving channels to memory:', error);
-    }
-    return;
-  }
-  
-  // For local development, use file-based storage
+export async function saveChannels(channels: string[]): Promise<void> {
   try {
-    // Ensure directory exists
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
+    const uniqueChannels = Array.from(new Set(channels.filter(Boolean)));
+    const collection = await getCollection(CHANNELS_COLLECTION);
+
+    // Clear the existing collection
+    await collection.deleteMany({});
+
+    // Insert new channels if there are any
+    if (uniqueChannels.length > 0) {
+      const documents = uniqueChannels.map(id => ({ _id: id }));
+      await collection.insertMany(documents);
     }
-
-    const data: StorageData = {
-      channels: uniqueChannels,
-      lastUpdated: new Date().toISOString()
-    };
-
-    fs.writeFileSync(CHANNELS_FILE, JSON.stringify(data, null, 2));
-    console.log(`Saved ${uniqueChannels.length} channels to storage`);
+    
+    console.log(`Saved ${uniqueChannels.length} channels to Astra DB`);
   } catch (error) {
-    console.error('Error saving channels to storage:', error);
+    console.error('Error saving channels to Astra DB:', error);
   }
 }
 
 /**
- * Add a single channel to storage
+ * Add a single channel to Astra DB
  */
-export function addChannel(channelId: string): void {
-  // Load current channels (either from memory or file)
-  const channels = loadChannels();
-  
-  // Add channel if it doesn't exist
-  if (!channels.includes(channelId)) {
-    channels.push(channelId);
-    saveChannels(channels);
-    console.log(`Added channel ${channelId} to storage`);
+export async function addChannel(channelId: string): Promise<void> {
+  console.log(`Adding channel ${channelId} to Astra DB`);
+  try {
+    const collection = await getCollection(CHANNELS_COLLECTION);
+    await collection.updateOne(
+      { _id: channelId },
+      { $setOnInsert: { _id: channelId } },
+      { upsert: true }
+    );
+    console.log(`Channel ${channelId} added successfully.`);
+  } catch (error) {
+    console.error(`Error adding channel ${channelId} to Astra DB:`, error);
+    throw error; // Re-throw the error to be handled by the caller
   }
 }
 
 /**
- * Remove a channel from storage
+ * Remove a channel from Astra DB
  */
-export function removeChannel(channelId: string): void {
-  const channels = loadChannels();
-  const updatedChannels = channels.filter(id => id !== channelId);
-  
-  if (channels.length !== updatedChannels.length) {
-    saveChannels(updatedChannels);
-    console.log(`Removed channel ${channelId} from storage`);
+export async function removeChannel(channelId: string): Promise<void> {
+  if (!channelId) return;
+
+  try {
+    const collection = await getCollection(CHANNELS_COLLECTION);
+    const result = await collection.deleteOne({ _id: channelId });
+    if (result.deletedCount > 0) {
+      console.log(`Removed channel ${channelId} from Astra DB`);
+    }
+  } catch (error) {
+    console.error(`Error removing channel ${channelId} from Astra DB:`, error);
   }
-} 
+}
 
 /**
- * Load footer text from storage
+ * Load footer text from Astra DB
  */
-export function loadFooter(): string {
-  // For Vercel, try to load from environment variable first
-  if (isVercel) {
-    try {
-      // If we have in-memory footer, use that
-      if (memoryFooter) {
-        return memoryFooter;
-      }
-      
-      // Try to load from environment variable
-      const envFooter = process.env.STORED_FOOTER;
-      if (envFooter) {
-        memoryFooter = envFooter;
-        return memoryFooter;
-      }
-      
-      return '';
-    } catch (error) {
-      console.error('Error loading footer from environment:', error);
-      return '';
-    }
-  }
-  
-  // For local development, use file-based storage
+export async function loadFooter(): Promise<string> {
   try {
-    if (!fs.existsSync(FOOTER_FILE)) {
-      // Initialize with empty data if file doesn't exist
-      fs.writeFileSync(FOOTER_FILE, JSON.stringify(defaultFooter, null, 2));
-      return '';
-    }
-
-    const data = JSON.parse(fs.readFileSync(FOOTER_FILE, 'utf8')) as FooterData;
-    return data.text || '';
+    const collection = await getCollection(FOOTER_COLLECTION);
+    const footerDoc = await collection.findOne<Footer>({ _id: FOOTER_DOCUMENT_ID });
+    return footerDoc ? footerDoc.text : '';
   } catch (error) {
-    console.error('Error loading footer from storage:', error);
+    console.error('Error loading footer from Astra DB:', error);
     return '';
   }
 }
 
 /**
- * Save footer text to storage
- * Preserves all Telegram's special formatting and clickable links
+ * Save footer text to Astra DB
  */
-export function saveFooter(text: string): void {
-  // For Vercel, store in memory
-  if (isVercel) {
-    try {
-      memoryFooter = text;
-      console.log('Footer saved in memory');
-      return;
-    } catch (error) {
-      console.error('Error saving footer to memory:', error);
-    }
-    return;
-  }
-  
-  // For local development, use file-based storage
+export async function saveFooter(text: string): Promise<void> {
   try {
-    // Ensure directory exists
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-
-    const data: FooterData = {
-      text: text,
-      lastUpdated: new Date().toISOString()
-    };
-
-    fs.writeFileSync(FOOTER_FILE, JSON.stringify(data, null, 2));
-    console.log('Footer saved to storage');
+    const collection = await getCollection(FOOTER_COLLECTION);
+    await collection.findOneAndUpdate(
+      { _id: FOOTER_DOCUMENT_ID },
+      {
+        $set: {
+          text: text,
+          lastUpdated: new Date().toISOString(),
+        },
+      },
+      { upsert: true }
+    );
+    console.log('Footer saved to Astra DB');
   } catch (error) {
-    console.error('Error saving footer to storage:', error);
+    console.error('Error saving footer to Astra DB:', error);
   }
 }
 
 /**
- * Clear footer text from storage
+ * Clear footer text from Astra DB
  */
-export function clearFooter(): void {
+export async function clearFooter(): Promise<void> {
   try {
-    saveFooter('');
-    console.log('Footer cleared from storage');
+    await saveFooter('');
+    console.log('Footer cleared from Astra DB');
   } catch (error) {
-    console.error('Error clearing footer from storage:', error);
+    console.error('Error clearing footer from Astra DB:', error);
   }
 } 

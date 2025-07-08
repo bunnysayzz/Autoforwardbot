@@ -86,20 +86,20 @@ export async function POST(request: NextRequest) {
         if (parts.length >= 2) {
           const channelId = parts[1].trim();
           console.log(`Directly adding channel: ${channelId}`);
-          addChannel(channelId);
+          await addChannel(channelId);
         }
       }
       
       // Check current storage state
-      const currentChannels = loadChannels();
-      console.log('Current stored channels:', currentChannels);
+      const currentChannels = await loadChannels();
+      console.log('Current stored channels:', await currentChannels);
       
       // Handle the message
       console.log('Processing message from admin user');
       await handleMessage(update.message);
       
       // Check if storage changed
-      const updatedChannels = loadChannels();
+      const updatedChannels = await loadChannels();
       console.log('Updated stored channels:', updatedChannels);
       
       return NextResponse.json(
@@ -165,7 +165,7 @@ export async function GET(request: NextRequest) {
   }
   
   // Check current storage state
-  const currentChannels = loadChannels();
+  const currentChannels = await loadChannels();
   console.log('Current stored channels:', currentChannels);
   
   console.log('Valid webhook GET request - endpoint is active');
