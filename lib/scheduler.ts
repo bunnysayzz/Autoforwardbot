@@ -13,24 +13,32 @@ import { loadFooter } from './storage';
  */
 export async function executeScheduledPosts(bot: TelegramBot, currentTime: string): Promise<void> {
   try {
-    console.log(`Checking for scheduled posts at ${currentTime}`);
+    console.log(`SCHEDULER: Checking for scheduled posts at ${currentTime}`);
     
     // Get all active schedules
+    console.log('SCHEDULER: Fetching all active schedules from database...');
     const activeSchedules = await getAllActiveSchedules();
-    console.log(`Found ${activeSchedules.length} active schedules`);
+    console.log(`SCHEDULER: Found ${activeSchedules.length} active schedules`);
     
     if (activeSchedules.length === 0) {
+      console.log('SCHEDULER: No active schedules found, returning');
       return;
     }
+    
+    // Log all schedule times for debugging
+    activeSchedules.forEach((schedule, index) => {
+      console.log(`SCHEDULER: Schedule ${index + 1} - Times: [${schedule.times.join(', ')}], User: ${schedule.userId}`);
+    });
     
     // Filter schedules that match the current time
     const matchingSchedules = activeSchedules.filter(schedule => 
       schedule.times.includes(currentTime)
     );
     
-    console.log(`Found ${matchingSchedules.length} schedules matching time ${currentTime}`);
+    console.log(`SCHEDULER: Found ${matchingSchedules.length} schedules matching time ${currentTime}`);
     
     if (matchingSchedules.length === 0) {
+      console.log(`SCHEDULER: No schedules match current time ${currentTime}, returning`);
       return;
     }
     

@@ -59,14 +59,24 @@ export async function POST(request: NextRequest) {
     console.log('Received update:', JSON.stringify(update));
 
     // Check for pending scheduled posts on every webhook call (serverless scheduling)
+    console.log('SCHEDULING: Starting scheduled post check...');
     try {
+      console.log('SCHEDULING: Importing scheduler modules...');
       const { executeScheduledPosts, getCurrentTime } = await import('../../../../lib/scheduler');
       const { default: bot } = await import('../../../../lib/telegram');
+      
+      console.log('SCHEDULING: Getting current time...');
       const currentTime = getCurrentTime();
-      console.log(`Checking for scheduled posts at ${currentTime}`);
+      console.log(`SCHEDULING: Current IST time is ${currentTime}`);
+      
+      console.log('SCHEDULING: Executing scheduled posts check...');
       await executeScheduledPosts(bot, currentTime);
+      console.log('SCHEDULING: Scheduled posts check completed successfully');
     } catch (scheduleError) {
-      console.error('Error checking scheduled posts:', scheduleError);
+      console.error('SCHEDULING: Error checking scheduled posts:', scheduleError);
+      if (scheduleError instanceof Error) {
+        console.error('SCHEDULING: Error stack:', scheduleError.stack);
+      }
       // Don't fail the webhook if schedule check fails
     }
 

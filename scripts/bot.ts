@@ -115,6 +115,7 @@ export async function setupBotCommands() {
         { command: 'my_schedules', description: 'View and manage your active schedules' },
         { command: 'trigger_posts', description: 'Manually trigger scheduled posts (admin only)' },
         { command: 'time', description: 'Check current IST and UTC time' },
+        { command: 'debug_schedules', description: 'Debug: Show all schedules in database' },
         { command: 'sendnow', description: 'Forward messages immediately' },
         { command: 'menu', description: 'Show main menu with options' },
         { command: 'help', description: 'Show help and instructions' }
@@ -425,6 +426,51 @@ export async function handleMessage(message: Message) {
       );
     } catch (error) {
       await bot.sendMessage(chatId, `❌ Error checking time: ${(error as Error).message}`);
+    }
+    return;
+  }
+
+  // Handle /debug_schedules command (check what schedules exist)
+  if (message.text?.startsWith('/debug_schedules')) {
+    try {
+      const { getAllActiveSchedules } = await import('../lib/storage');
+      const { getCurrentTime } = await import('../lib/scheduler');
+      const currentTime = getCurrentTime();
+      
+      await bot.sendMessage(chatId, '🔍 **Debug: Fetching schedules from database...**');
+      
+      const schedules = await getAllActiveSchedules();
+      
+      if (schedules.length === 0) {
+        await bot.sendMessage(chatId, 
+          '📋 **Debug Results**\n\n' +
+          '❌ **No active schedules found in database**\n\n' +
+          'This means either:\n' +
+          '• You haven\'t created any schedules yet\n' +
+          '• All schedules are disabled\n' +
+          '• Database connection issue\n\n' +
+          '💡 Try creating a new schedule with `/schedule`'
+        );
+        return;
+      }
+      
+      let debugText = `📋 **Debug Results**\n\n` +
+        `🕐 **Current IST Time**: ${currentTime}\n` +
+        `📊 **Active Schedules Found**: ${schedules.length}\n\n`;
+      
+      schedules.forEach((schedule, index) => {
+        const timesText = schedule.times.join(', ');
+        const matchesNow = schedule.times.includes(currentTime) ? '✅ MATCHES NOW' : '⏳ Future';
+        debugText += `**${index + 1}.** User: ${schedule.userId}\n`;
+        debugText += `   Times: ${timesText}\n`;
+        debugText += `   Posts: ${schedule.postIds.length}\n`;
+        debugText += `   Status: ${matchesNow}\n\n`;
+      });
+      
+      await bot.sendMessage(chatId, debugText, { parse_mode: 'Markdown' });
+      
+    } catch (error) {
+      await bot.sendMessage(chatId, `❌ Debug error: ${(error as Error).message}`);
     }
     return;
   }
