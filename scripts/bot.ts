@@ -357,7 +357,15 @@ export async function handleMessage(message: Message) {
       const parts = message.text.split(' ');
       const time = parts.length > 1 ? parts[1] : undefined;
       const result = await triggerScheduledPosts(bot, time);
-      await bot.sendMessage(chatId, result);
+      await bot.sendMessage(chatId, 
+        `${result}\n\n` +
+        '💡 **Serverless Scheduling Info:**\n' +
+        '• Scheduled posts are checked on every bot interaction\n' +
+        '• For more reliable scheduling, set up external cron:\n' +
+        '• URL: https://autoforwarderbot-nine.vercel.app/api/telegram/cron?secret=97d6d9355d087fa59f7c847f658ec515ee2cbbd820a498825ac974285e1a1344\n' +
+        '• Call this URL every minute from cron-job.org or similar service',
+        { parse_mode: 'Markdown' }
+      );
     } catch (error) {
       await bot.sendMessage(chatId, `❌ Error: ${(error as Error).message}`);
     }

@@ -58,6 +58,18 @@ export async function POST(request: NextRequest) {
     const update: Update = await request.json();
     console.log('Received update:', JSON.stringify(update));
 
+    // Check for pending scheduled posts on every webhook call (serverless scheduling)
+    try {
+      const { executeScheduledPosts, getCurrentTime } = await import('../../../../lib/scheduler');
+      const { default: bot } = await import('../../../../lib/telegram');
+      const currentTime = getCurrentTime();
+      console.log(`Checking for scheduled posts at ${currentTime}`);
+      await executeScheduledPosts(bot, currentTime);
+    } catch (scheduleError) {
+      console.error('Error checking scheduled posts:', scheduleError);
+      // Don't fail the webhook if schedule check fails
+    }
+
     // Process the update if it contains a message or callback query
     if (update.message) {
       // Check if the message is from an admin
