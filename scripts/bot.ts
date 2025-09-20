@@ -1,7 +1,7 @@
+import TelegramBot, { Message, CallbackQuery } from 'node-telegram-bot-api';
 import bot from '../lib/telegram';
 import { isAdmin, getAdminChannels, addChannelHint } from '../lib/telegram';
 import { loadChannels, removeChannel, loadFooter, saveFooter, clearFooter } from '../lib/storage';
-import { Message, CallbackQuery } from 'node-telegram-bot-api';
 import {
   handleScheduleCommand,
   handleManagePostsCommand,
@@ -83,7 +83,7 @@ async function forwardMessage(bot: TelegramBot, message: Message, chatId: number
         successCount++;
       } catch (error) {
         console.error(`Failed to forward message to channel ${channel.id}:`, error);
-        failedChannels.push(channel.title || channel.username || channel.id);
+        failedChannels.push(channel.title || channel.username || String(channel.id));
       }
     }
 
@@ -149,7 +149,7 @@ export async function handleMessage(message: Message) {
   // Handle /start or /menu command
   if (message.text?.startsWith('/start') || message.text?.startsWith('/menu')) {
     try {
-      await showMainMenu(chatId);
+      await showMainMenu(bot, chatId);
     } catch (error) {
       console.error('Error showing main menu:', error);
       await bot.sendMessage(chatId, `Error: ${(error as Error).message}`);
