@@ -325,15 +325,6 @@ export async function handleSchedulingCallback(bot: TelegramBot, callbackQuery: 
     } else if (data.startsWith('posts_page_')) {
       const offset = parseInt(data.replace('posts_page_', ''));
       await showPostsPage(bot, chatId, userId, offset);
-    } else if (data.startsWith('select_post_')) {
-      const postId = data.replace('select_post_', '');
-      await handlePostSelection(bot, chatId, userId, postId);
-    } else if (data === 'confirm_schedule_creation') {
-      await confirmScheduleCreation(bot, chatId, userId);
-    } else if (data === 'cancel_schedule_creation') {
-      await clearUserState(userId);
-      const fakeMessage = { chat: { id: chatId }, from: { id: parseInt(userId) } } as Message;
-      await handleScheduleCommand(bot, fakeMessage);
     } else if (data.startsWith('delete_post_')) {
       const postId = data.replace('delete_post_', '');
       await handlePostDeletion(bot, chatId, userId, postId);
@@ -635,7 +626,7 @@ async function handleScheduleSetupMessage(bot: TelegramBot, message: Message, us
       return true;
     }
     
-    // Move to post selection
+    // Check if user has saved posts
     const posts = await getUserScheduledPosts(userId);
     if (posts.length === 0) {
       await bot.sendMessage(chatId,
@@ -652,13 +643,60 @@ async function handleScheduleSetupMessage(bot: TelegramBot, message: Message, us
       return true;
     }
     
-    await saveUserState(userId, {
-      currentFlow: 'schedule_setup',
-      tempData: { ...tempData, step: 'post_selection', postsPerTime: count, selectedPosts: [] }
-    });
+    if (posts.length < count) {
+      await bot.sendMessage(chatId, 
+        `❌ You only have ${posts.length} saved posts but want to send ${count} posts per time. ` +
+        'Please add more posts or reduce the number of posts per time.'
+      );
+      return true;
+    }
     
-    // Show posts for selection
-    await showPostSelectionMenu(bot, chatId, userId, posts, []);
+    // Automatically use ALL saved posts - no manual selection needed
+    const allPostIds = posts.map(post => post._id);
+    
+    // Create the schedule immediately with all posts
+    try {
+      const scheduleId = await saveUserSchedule({
+        userId,
+        times: tempData.times,
+        postIds: allPostIds,
+        postsPerTime: count,
+        isActive: true
+      });
+      
+      // Clear user state
+      await clearUserState(userId);
+      
+      // Send confirmation
+      await bot.sendMessage(chatId,
+        '✅ *Schedule Created Successfully!*\n\n' +
+        `⏰ Times: ${tempData.times.join(', ')}\n` +
+        `📝 Posts per time: ${count}\n` +
+        `📚 Available posts: ${allPostIds.length} (all your saved posts)\n` +
+        `📊 Status: Active\n\n` +
+        `🎲 The bot will randomly select ${count} post(s) from your ${allPostIds.length} saved posts at each scheduled time.`,
+        {
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [
+              [{
+                text: '📋 View My Schedules',
+                callback_data: 'manage_schedules'
+              }],
+              [{
+                text: '🔙 Back to Menu',
+                callback_data: 'back_to_main_menu'
+              }]
+            ]
+          }
+        }
+      );
+      
+    } catch (error) {
+      console.error('Error creating schedule:', error);
+      await bot.sendMessage(chatId, '❌ Error creating schedule. Please try again.');
+    }
+    
     return true;
   }
   
@@ -688,44 +726,7 @@ async function handlePostManagementMessage(bot: TelegramBot, message: Message, u
   return false;
 }
 
-/**
- * Show post selection menu
- */
-async function showPostSelectionMenu(bot: TelegramBot, chatId: number, userId: string, posts: any[], selectedPosts: string[]): Promise<void> {
-  const keyboard: any[][] = [];
-  
-  posts.forEach(post => {
-    const isSelected = selectedPosts.includes(post._id);
-    const icon = isSelected ? '✅' : '⬜';
-    const title = post.title || `${post.messageType} - ${post.content?.substring(0, 30) || 'Media'}...`;
-    
-    keyboard.push([{
-      text: `${icon} ${title}`,
-      callback_data: `select_post_${post._id}`
-    }]);
-  });
-  
-  keyboard.push([
-    {
-      text: '✅ Create Schedule',
-      callback_data: 'confirm_schedule_creation'
-    },
-    {
-      text: '❌ Cancel',
-      callback_data: 'cancel_schedule_creation'
-    }
-  ]);
-  
-  await bot.sendMessage(chatId,
-    '📚 *Select Posts for Schedule*\n\n' +
-    'Choose which posts to include in this schedule. Selected posts will be randomly chosen for forwarding.\n\n' +
-    `Currently selected: ${selectedPosts.length} posts`,
-    {
-      parse_mode: 'Markdown',
-      reply_markup: { inline_keyboard: keyboard }
-    }
-  );
-}
+
 
 /**
  * Save post from message
@@ -804,112 +805,9 @@ async function savePostFromMessage(bot: TelegramBot, message: Message, userId: s
   }
 } 
 
-/**
- * Handle post selection during schedule creation
- */
-async function handlePostSelection(bot: TelegramBot, chatId: number, userId: string, postId: string): Promise<void> {
-  try {
-    const userState = await getUserState(userId);
-    if (!userState || userState.currentFlow !== 'schedule_setup') return;
-    
-    const tempData = userState.tempData || {};
-    const selectedPosts = tempData.selectedPosts || [];
-    
-    // Toggle selection
-    const index = selectedPosts.indexOf(postId);
-    if (index > -1) {
-      selectedPosts.splice(index, 1);
-    } else {
-      selectedPosts.push(postId);
-    }
-    
-    // Update state
-    await saveUserState(userId, {
-      currentFlow: 'schedule_setup',
-      tempData: { ...tempData, selectedPosts }
-    });
-    
-    // Refresh the menu
-    const posts = await getUserScheduledPosts(userId);
-    await showPostSelectionMenu(bot, chatId, userId, posts, selectedPosts);
-    
-  } catch (error) {
-    console.error('Error handling post selection:', error);
-    await bot.sendMessage(chatId, '❌ Error updating selection.');
-  }
-}
 
-/**
- * Confirm and create the schedule
- */
-async function confirmScheduleCreation(bot: TelegramBot, chatId: number, userId: string): Promise<void> {
-  try {
-    const userState = await getUserState(userId);
-    if (!userState || userState.currentFlow !== 'schedule_setup') return;
-    
-    const tempData = userState.tempData || {};
-    const { times, postsPerTime, selectedPosts } = tempData;
-    
-    if (!times || times.length === 0) {
-      await bot.sendMessage(chatId, '❌ No times specified.');
-      return;
-    }
-    
-    if (!selectedPosts || selectedPosts.length === 0) {
-      await bot.sendMessage(chatId, '❌ Please select at least one post.');
-      return;
-    }
-    
-    if (selectedPosts.length < postsPerTime) {
-      await bot.sendMessage(chatId, 
-        `❌ You selected ${selectedPosts.length} posts but want to send ${postsPerTime} posts per time. ` +
-        'Please select more posts or reduce the number of posts per time.'
-      );
-      return;
-    }
-    
-    // Create the schedule
-    const scheduleId = await saveUserSchedule({
-      userId,
-      times,
-      postIds: selectedPosts,
-      postsPerTime,
-      isActive: true
-    });
-    
-    // Clear user state
-    await clearUserState(userId);
-    
-    // Send confirmation
-    await bot.sendMessage(chatId,
-      '✅ *Schedule Created Successfully!*\n\n' +
-      `⏰ Times: ${times.join(', ')}\n` +
-      `📝 Posts per time: ${postsPerTime}\n` +
-      `📚 Selected posts: ${selectedPosts.length}\n` +
-      `📊 Status: Active\n\n` +
-      'Your schedule is now active and will automatically forward random posts at the specified times every day.',
-      {
-        parse_mode: 'Markdown',
-        reply_markup: {
-          inline_keyboard: [
-            [{
-              text: '📋 View My Schedules',
-              callback_data: 'manage_schedules'
-            }],
-            [{
-              text: '🔙 Back to Menu',
-              callback_data: 'back_to_main_menu'
-            }]
-          ]
-        }
-      }
-    );
-    
-  } catch (error) {
-    console.error('Error confirming schedule creation:', error);
-    await bot.sendMessage(chatId, '❌ Error creating schedule. Please try again.');
-  }
-}
+
+
 
 /**
  * Handle post deletion
