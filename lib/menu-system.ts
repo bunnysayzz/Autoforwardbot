@@ -213,16 +213,18 @@ export function getHelpText(topic: string): string {
 
 1. Click "⏰ Schedule Posts" from main menu
 2. Follow the setup wizard:
-   - Set times (e.g., 9:30, 18:00)
+   - Set times (e.g., 9:30, 18:00) in IST
    - Choose how many posts per time
-   - Select which saved posts to use
+   - Bot automatically uses all your saved posts
 3. Your posts will be sent automatically!
 
-**Time format (24-hour only):**
-• 9:30 (9:30 AM)
-• 14:30 (2:30 PM)
-• 18:00 (6:00 PM)
-• 20:55 (8:55 PM)`;
+**Time format (24-hour IST only):**
+• 9:30 (9:30 AM IST)
+• 14:30 (2:30 PM IST)
+• 18:00 (6:00 PM IST)
+• 20:55 (8:55 PM IST)
+
+🌍 All times are in Indian Standard Time (IST)`;
 
     case 'channels':
       return `🔧 **Channel Setup**

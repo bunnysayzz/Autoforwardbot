@@ -356,11 +356,12 @@ async function startScheduleCreation(bot: TelegramBot, chatId: number, userId: s
   await bot.sendMessage(chatId,
     '⏰ *Create New Schedule*\n\n' +
     'Let\'s set up your posting schedule. First, tell me what time(s) you want posts to be sent.\n\n' +
-    '📝 *24-Hour Format Only:*\n' +
-    '• `9:30` (9:30 AM)\n' +
-    '• `14:30` (2:30 PM)\n' +
-    '• `20:55` (8:55 PM)\n' +
-    '• `08:00` (8:00 AM)\n\n' +
+    '📝 *24-Hour Format Only (Indian Standard Time):*\n' +
+    '• `9:30` (9:30 AM IST)\n' +
+    '• `14:30` (2:30 PM IST)\n' +
+    '• `20:55` (8:55 PM IST)\n' +
+    '• `08:00` (8:00 AM IST)\n\n' +
+    '🌍 *Timezone*: All times are in Indian Standard Time (IST)\n' +
     '💡 You can send multiple times, one per message. When done, send `/done` to continue.',
     { parse_mode: 'Markdown' }
   );
@@ -586,11 +587,11 @@ async function handleScheduleSetupMessage(bot: TelegramBot, message: Message, us
     const parsedTime = parseTimeString(text);
     if (!parsedTime) {
       await bot.sendMessage(chatId,
-        '❌ Invalid time format. Please use 24-hour format only:\n' +
-        '• `9:30` (9:30 AM)\n' +
-        '• `14:30` (2:30 PM)\n' +
-        '• `20:55` (8:55 PM)\n' +
-        '• `08:00` (8:00 AM)',
+        '❌ Invalid time format. Please use 24-hour format only (IST):\n' +
+        '• `9:30` (9:30 AM IST)\n' +
+        '• `14:30` (2:30 PM IST)\n' +
+        '• `20:55` (8:55 PM IST)\n' +
+        '• `08:00` (8:00 AM IST)',
         { parse_mode: 'Markdown' }
       );
       return true;

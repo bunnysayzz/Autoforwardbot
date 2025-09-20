@@ -110,10 +110,11 @@ export async function setupBotCommands() {
       { command: 'remove_channel', description: 'Remove a channel from the forwarding list (use with channel ID)' },
       { command: 'footer', description: 'Set a footer text to append to all forwarded messages' },
       { command: 'clearfooter', description: 'Clear the current footer' },
-              { command: 'schedule', description: 'Manage post scheduling system' },
+              { command: 'schedule', description: 'Manage post scheduling system (IST timezone)' },
         { command: 'manage_posts', description: 'Add or manage saved posts for scheduling' },
         { command: 'my_schedules', description: 'View and manage your active schedules' },
         { command: 'trigger_posts', description: 'Manually trigger scheduled posts (admin only)' },
+        { command: 'time', description: 'Check current IST and UTC time' },
         { command: 'sendnow', description: 'Forward messages immediately' },
         { command: 'menu', description: 'Show main menu with options' },
         { command: 'help', description: 'Show help and instructions' }
@@ -354,11 +355,15 @@ export async function handleMessage(message: Message) {
   // Handle /trigger_posts command (for testing)
   if (message.text?.startsWith('/trigger_posts')) {
     try {
+      const { getCurrentTime } = await import('../lib/scheduler');
+      const currentIstTime = getCurrentTime();
       const parts = message.text.split(' ');
       const time = parts.length > 1 ? parts[1] : undefined;
       const result = await triggerScheduledPosts(bot, time);
       await bot.sendMessage(chatId, 
         `${result}\n\n` +
+        `🕐 **Current IST Time**: ${currentIstTime}\n` +
+        `🌍 **Timezone**: Indian Standard Time (UTC+5:30)\n\n` +
         '💡 **Serverless Scheduling Info:**\n' +
         '• Scheduled posts are checked on every bot interaction\n' +
         '• For more reliable scheduling, set up external cron:\n' +
@@ -399,6 +404,27 @@ export async function handleMessage(message: Message) {
       await bot.sendMessage(chatId, `📊 **Database Status**\n\n${status}`, { parse_mode: 'Markdown' });
     } catch (error) {
       await bot.sendMessage(chatId, `❌ Error checking database status: ${(error as Error).message}`);
+    }
+    return;
+  }
+
+  // Handle /time command (check current IST time)
+  if (message.text?.startsWith('/time')) {
+    try {
+      const { getCurrentTime } = await import('../lib/scheduler');
+      const currentIstTime = getCurrentTime();
+      const now = new Date();
+      const utcTime = now.toISOString().substr(11, 5);
+      await bot.sendMessage(chatId, 
+        `🕐 **Current Times**\n\n` +
+        `🇮🇳 **IST**: ${currentIstTime} (Indian Standard Time)\n` +
+        `🌍 **UTC**: ${utcTime} (Coordinated Universal Time)\n\n` +
+        `📅 **Date**: ${now.toISOString().substr(0, 10)}\n` +
+        `⏰ All schedules use IST time zone`,
+        { parse_mode: 'Markdown' }
+      );
+    } catch (error) {
+      await bot.sendMessage(chatId, `❌ Error checking time: ${(error as Error).message}`);
     }
     return;
   }

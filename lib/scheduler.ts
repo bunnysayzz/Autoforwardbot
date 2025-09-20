@@ -213,12 +213,14 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Get current time in HH:MM format
+ * Get current time in HH:MM format (Indian Standard Time - IST)
  */
 export function getCurrentTime(): string {
+  // Get current time in IST (UTC+5:30)
   const now = new Date();
-  const hours = now.getHours().toString().padStart(2, '0');
-  const minutes = now.getMinutes().toString().padStart(2, '0');
+  const istTime = new Date(now.getTime() + (5.5 * 60 * 60 * 1000)); // Add 5.5 hours for IST
+  const hours = istTime.getUTCHours().toString().padStart(2, '0');
+  const minutes = istTime.getUTCMinutes().toString().padStart(2, '0');
   return `${hours}:${minutes}`;
 }
 
