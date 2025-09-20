@@ -91,16 +91,20 @@ async function executeIndividualSchedule(
 ): Promise<void> {
   
   // Get posts for this schedule
+  console.log(`SCHEDULER: Fetching ${schedule.postIds.length} saved posts for schedule ${schedule._id}`);
   const posts = await getScheduledPostsByIds(schedule.postIds);
   
   if (posts.length === 0) {
     throw new Error('No posts found for schedule');
   }
   
+  console.log(`SCHEDULER: Found ${posts.length} posts in database`);
+  console.log(`SCHEDULER: Need to select ${schedule.postsPerTime} posts randomly`);
+  
   // Randomly select posts to send
   const postsToSend = selectRandomPosts(posts, schedule.postsPerTime);
   
-  console.log(`Sending ${postsToSend.length} posts for schedule ${schedule._id}`);
+  console.log(`SCHEDULER: Selected ${postsToSend.length} posts to send for schedule ${schedule._id}`);
   
   // Forward each selected post to all admin channels
   for (const post of postsToSend) {
@@ -112,16 +116,31 @@ async function executeIndividualSchedule(
 }
 
 /**
- * Select random posts from available posts
+ * Select random posts from available posts using Fisher-Yates shuffle
  */
-function selectRandomPosts(posts: any[], count: number): any[] {
+export function selectRandomPosts(posts: any[], count: number): any[] {
   if (posts.length <= count) {
+    console.log(`SCHEDULER: Returning all ${posts.length} posts (requested ${count})`);
     return posts;
   }
   
-  // Shuffle array and take first 'count' items
-  const shuffled = posts.sort(() => 0.5 - Math.random());
-  return shuffled.slice(0, count);
+  // Create a copy to avoid mutating the original array
+  const postsCopy = [...posts];
+  
+  // Fisher-Yates shuffle algorithm for true randomness
+  for (let i = postsCopy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [postsCopy[i], postsCopy[j]] = [postsCopy[j], postsCopy[i]];
+  }
+  
+  const selectedPosts = postsCopy.slice(0, count);
+  console.log(`SCHEDULER: Randomly selected ${selectedPosts.length} posts from ${posts.length} available`);
+  
+  // Log selected post IDs for debugging
+  const selectedIds = selectedPosts.map(post => post._id || 'unknown');
+  console.log(`SCHEDULER: Selected post IDs: [${selectedIds.join(', ')}]`);
+  
+  return selectedPosts;
 }
 
 /**

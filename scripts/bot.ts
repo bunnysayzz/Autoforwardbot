@@ -116,6 +116,7 @@ export async function setupBotCommands() {
         { command: 'trigger_posts', description: 'Manually trigger scheduled posts (admin only)' },
         { command: 'time', description: 'Check current IST and UTC time' },
         { command: 'debug_schedules', description: 'Debug: Show all schedules in database' },
+        { command: 'test_random', description: 'Test random post selection algorithm' },
         { command: 'sendnow', description: 'Forward messages immediately' },
         { command: 'menu', description: 'Show main menu with options' },
         { command: 'help', description: 'Show help and instructions' }
@@ -471,6 +472,56 @@ export async function handleMessage(message: Message) {
       
     } catch (error) {
       await bot.sendMessage(chatId, `❌ Debug error: ${(error as Error).message}`);
+    }
+    return;
+  }
+
+  // Handle /test_random command (test random post selection)
+  if (message.text?.startsWith('/test_random')) {
+    try {
+      const { getUserScheduledPosts } = await import('../lib/storage');
+      const userId = String(message.from?.id);
+      
+      await bot.sendMessage(chatId, '🎲 **Testing Random Post Selection...**');
+      
+      const posts = await getUserScheduledPosts(userId);
+      
+      if (posts.length === 0) {
+        await bot.sendMessage(chatId, 
+          '❌ **No saved posts found**\n\n' +
+          'Add some posts first using `/manage_posts`'
+        );
+        return;
+      }
+      
+      if (posts.length < 3) {
+        await bot.sendMessage(chatId, 
+          `⚠️ **Only ${posts.length} posts found**\n\n` +
+          'Add more posts to see better randomization demo'
+        );
+      }
+      
+      const count = Math.min(3, posts.length);
+      
+      // Test random selection 3 times
+      let testResults = `🎲 **Random Selection Test**\n\n` +
+        `📚 **Total Posts**: ${posts.length}\n` +
+        `🎯 **Selecting**: ${count} posts each time\n\n`;
+      
+      for (let i = 1; i <= 3; i++) {
+        // Import the same function used by scheduler
+        const { selectRandomPosts } = await import('../lib/scheduler');
+        const selected = selectRandomPosts(posts, count);
+        const titles = selected.map(post => post.title || post.content?.substring(0, 30) || 'Untitled').join(', ');
+        testResults += `**Test ${i}**: ${titles}\n\n`;
+      }
+      
+      testResults += '💡 Each test should show different posts if randomization is working!';
+      
+      await bot.sendMessage(chatId, testResults, { parse_mode: 'Markdown' });
+      
+    } catch (error) {
+      await bot.sendMessage(chatId, `❌ Random test error: ${(error as Error).message}`);
     }
     return;
   }
