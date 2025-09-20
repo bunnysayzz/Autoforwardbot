@@ -34,9 +34,9 @@ const keepAlive = async () => {
 const wakeUpDatabase = async () => {
   try {
     console.log('Attempting to wake up Astra DB...');
-    // Try multiple simple operations to wake up the database
+    // Try simple operations that are supported by Astra DB
     await db.command({ findCollections: {} });
-    await db.command({ ping: 1 });
+    await db.command({ findCollections: {} }); // Second call to ensure wake-up
     console.log('Astra DB wake-up successful');
   } catch (error) {
     console.error('Failed to wake up Astra DB:', error);

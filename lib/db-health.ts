@@ -46,8 +46,8 @@ export async function wakeUpDatabase(): Promise<boolean> {
     // Try multiple operations to wake up the database
     const operations = [
       () => db.command({ findCollections: {} }),
-      () => db.command({ ping: 1 }),
-      () => db.command({ serverStatus: 1 })
+      () => db.command({ findCollections: {} }),
+      () => db.command({ findCollections: {} })
     ];
     
     for (const operation of operations) {

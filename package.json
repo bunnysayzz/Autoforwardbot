@@ -13,6 +13,9 @@
     "deploy:dev": "vercel",
     "setup-bot": "ts-node --compiler-options '{\"module\":\"commonjs\"}' scripts/setup.ts",
     "setup-webhook": "ts-node --compiler-options '{\"module\":\"commonjs\"}' scripts/setup-webhook.ts",
+    "setup-production": "ts-node --compiler-options '{\"module\":\"commonjs\"}' scripts/setup-production-webhook.ts",
+    "setup-simple": "ts-node --compiler-options '{\"module\":\"commonjs\"}' scripts/simple-webhook-setup.ts",
+    "final-webhook": "ts-node --compiler-options '{\"module\":\"commonjs\"}' scripts/final-webhook-setup.ts",
     "health-check": "ts-node --compiler-options '{\"module\":\"commonjs\"}' scripts/health-check.ts",
     "test-scheduling": "ts-node --compiler-options '{\"module\":\"commonjs\"}' scripts/test-scheduling.ts"
   },

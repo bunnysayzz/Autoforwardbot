@@ -10,11 +10,94 @@ import {
   handleSchedulingMessage
 } from '../lib/scheduling';
 import { startScheduler, triggerScheduledPosts } from '../lib/scheduler';
+import { 
+  showMainMenu, 
+  createSendNowMenu, 
+  createChannelMenu, 
+  createBotSettingsMenu, 
+  createHelpMenu, 
+  getHelpText 
+} from '../lib/menu-system';
 
 const ADMIN_USER_ID = process.env.ADMIN_USER_ID;
 
 if (!ADMIN_USER_ID) {
   throw new Error('ADMIN_USER_ID is not defined in the environment variables');
+}
+
+/**
+ * Forward a message to all admin channels
+ */
+async function forwardMessage(bot: TelegramBot, message: Message, chatId: number): Promise<void> {
+  console.log('Forwarding message to channels...');
+  
+  try {
+    const channels = await getAdminChannels();
+    const footer = await loadFooter();
+    
+    if (channels.length === 0) {
+      await bot.sendMessage(chatId, '❌ No channels configured for forwarding.');
+      return;
+    }
+
+    let successCount = 0;
+    let failedChannels: string[] = [];
+
+    for (const channel of channels) {
+      try {
+        // Forward the message based on its type
+        if (message.text) {
+          const messageText = footer ? `${message.text}\n\n${footer}` : message.text;
+          await bot.sendMessage(channel.id, messageText);
+        } else if (message.photo) {
+          const caption = message.caption || '';
+          const finalCaption = footer ? `${caption}\n\n${footer}` : caption;
+          const photo = message.photo[message.photo.length - 1]; // Get the highest quality photo
+          await bot.sendPhoto(channel.id, photo.file_id, { caption: finalCaption });
+        } else if (message.video) {
+          const caption = message.caption || '';
+          const finalCaption = footer ? `${caption}\n\n${footer}` : caption;
+          await bot.sendVideo(channel.id, message.video.file_id, { caption: finalCaption });
+        } else if (message.document) {
+          const caption = message.caption || '';
+          const finalCaption = footer ? `${caption}\n\n${footer}` : caption;
+          await bot.sendDocument(channel.id, message.document.file_id, { caption: finalCaption });
+        } else if (message.audio) {
+          const caption = message.caption || '';
+          const finalCaption = footer ? `${caption}\n\n${footer}` : caption;
+          await bot.sendAudio(channel.id, message.audio.file_id, { caption: finalCaption });
+        } else if (message.voice) {
+          await bot.sendVoice(channel.id, message.voice.file_id);
+          if (footer) {
+            await bot.sendMessage(channel.id, footer);
+          }
+        } else if (message.animation) {
+          const caption = message.caption || '';
+          const finalCaption = footer ? `${caption}\n\n${footer}` : caption;
+          await bot.sendAnimation(channel.id, message.animation.file_id, { caption: finalCaption });
+        } else {
+          console.log('Unsupported message type, skipping...');
+          continue;
+        }
+        
+        successCount++;
+      } catch (error) {
+        console.error(`Failed to forward message to channel ${channel.id}:`, error);
+        failedChannels.push(channel.title || channel.username || channel.id);
+      }
+    }
+
+    // Send success/failure summary
+    let resultMessage = `✅ Message forwarded to ${successCount} channel(s).`;
+    if (failedChannels.length > 0) {
+      resultMessage += `\n❌ Failed to forward to: ${failedChannels.join(', ')}`;
+    }
+    
+    await bot.sendMessage(chatId, resultMessage);
+  } catch (error) {
+    console.error('Error during forwarding:', error);
+    await bot.sendMessage(chatId, `Error during forwarding: ${(error as Error).message}`);
+  }
 }
 
 // Set up the commands that will be shown in the bot menu
@@ -31,8 +114,9 @@ export async function setupBotCommands() {
         { command: 'manage_posts', description: 'Add or manage saved posts for scheduling' },
         { command: 'my_schedules', description: 'View and manage your active schedules' },
         { command: 'trigger_posts', description: 'Manually trigger scheduled posts (admin only)' },
-        { command: 'wakedb', description: 'Wake up the database if it\'s sleeping (admin only)' },
-        { command: 'dbstatus', description: 'Check database health status (admin only)' }
+        { command: 'sendnow', description: 'Forward messages immediately' },
+        { command: 'menu', description: 'Show main menu with options' },
+        { command: 'help', description: 'Show help and instructions' }
     ]);
     console.log('Bot commands have been set up successfully');
   } catch (error) {
@@ -40,8 +124,11 @@ export async function setupBotCommands() {
   }
 }
 
-// Flag to track whether we're waiting for footer input
+// Flags to track user states
 let awaitingFooter = false;
+let awaitingSendNow = false;
+let awaitingChannelAdd = false;
+let awaitingChannelRemove = false;
 
 export async function handleMessage(message: Message) {
   const chatId = message.chat.id;
@@ -59,28 +146,46 @@ export async function handleMessage(message: Message) {
     return;
   }
 
-  // Handle /start command
-  if (message.text?.startsWith('/start')) {
+  // Handle /start or /menu command
+  if (message.text?.startsWith('/start') || message.text?.startsWith('/menu')) {
     try {
-      const welcomeMessage = `👋 Welcome to the Telegram Autoforward Bot!\n\n` +
-                            `This bot forwards your messages to all channels where it has admin rights.\n\n` +
-                            `📋 **Channel Management:**\n` +
-                            `- /channel - Show all stored channels with their admin status\n` +
-                            `- /add_channel - Add a channel to the forwarding list\n` +
-                            `- /remove_channel - Remove a channel from the forwarding list\n\n` +
-                            `⏰ **Scheduling System:**\n` +
-                            `- /schedule - Manage post scheduling system\n` +
-                            `- /manage_posts - Add or manage saved posts for scheduling\n` +
-                            `- /my_schedules - View and manage your active schedules\n\n` +
-                            `🔧 **Other Commands:**\n` +
-                            `- /footer - Set a footer text to append to all forwarded messages\n` +
-                            `- /clearfooter - Clear the current footer\n\n` +
-                            `📨 To forward a message immediately, simply send it to this bot.\n` +
-                            `⏰ To schedule automatic posting, use the /schedule command.`;
-      
-      await bot.sendMessage(chatId, welcomeMessage);
+      await showMainMenu(chatId);
     } catch (error) {
-      console.error('Error sending welcome message:', error);
+      console.error('Error showing main menu:', error);
+      await bot.sendMessage(chatId, `Error: ${(error as Error).message}`);
+    }
+    return;
+  }
+
+  // Handle /sendnow command
+  if (message.text?.startsWith('/sendnow')) {
+    try {
+      awaitingSendNow = true;
+      await bot.sendMessage(chatId, 
+        '📤 **Send Now Mode**\n\n' +
+        'Send me any content (text, photo, video, document, etc.) and I\'ll forward it to all your channels immediately.\n\n' +
+        '✋ Send /cancel to exit send mode.',
+        { 
+          parse_mode: 'Markdown',
+          reply_markup: createSendNowMenu()
+        }
+      );
+    } catch (error) {
+      console.error('Error in sendnow command:', error);
+      await bot.sendMessage(chatId, `Error: ${(error as Error).message}`);
+    }
+    return;
+  }
+
+  // Handle /help command
+  if (message.text?.startsWith('/help')) {
+    try {
+      await bot.sendMessage(chatId, getHelpText('commands'), {
+        parse_mode: 'Markdown',
+        reply_markup: createHelpMenu()
+      });
+    } catch (error) {
+      console.error('Error showing help:', error);
       await bot.sendMessage(chatId, `Error: ${(error as Error).message}`);
     }
     return;
@@ -290,6 +395,35 @@ export async function handleMessage(message: Message) {
     return;
   }
 
+  // Handle cancel command
+  if (message.text === '/cancel') {
+    awaitingFooter = false;
+    awaitingSendNow = false;
+    awaitingChannelAdd = false;
+    awaitingChannelRemove = false;
+    await bot.sendMessage(chatId, '❌ Operation cancelled.');
+    await showMainMenu(bot, chatId);
+    return;
+  }
+
+  // Handle sendnow mode
+  if (awaitingSendNow && !message.text?.startsWith('/')) {
+    try {
+      awaitingSendNow = false;
+      await forwardMessage(bot, message, chatId);
+      await bot.sendMessage(chatId, 
+        '✅ Message forwarded to all channels!\n\nSend another message or use the menu below:', 
+        { reply_markup: createSendNowMenu() }
+      );
+      return;
+    } catch (error) {
+      console.error('Error in sendnow mode:', error);
+      await bot.sendMessage(chatId, `❌ Error forwarding message: ${(error as Error).message}`);
+      awaitingSendNow = false;
+      return;
+    }
+  }
+
   // Handle footer text input if we're awaiting it
   if (awaitingFooter) {
     try {
@@ -311,6 +445,7 @@ export async function handleMessage(message: Message) {
         chatId,
         '✅ Footer has been saved successfully. It will be appended to all forwarded messages.'
       );
+      await showMainMenu(bot, chatId);
       return;
     } catch (error) {
       awaitingFooter = false;
@@ -321,91 +456,47 @@ export async function handleMessage(message: Message) {
       return;
     }
   }
-  
-  // Handle forwarded message
-  try {
-    const channels = await getAdminChannels();
-    
-    if (channels.length > 0) {
-      let forwardedCount = 0;
-      let failedCount = 0;
-      
-      await bot.sendMessage(chatId, `Forwarding your message to ${channels.length} channels...`);
-      
-      // Load footer if exists
-      const footer = await loadFooter();
-      
-      for (const channel of channels) {
-        try {
-          // Skip forwarding to the source chat if it's a channel
-          if (channel.id === chatId) continue;
-          
-          // Handle different message types with footer
-          if (message.text && footer) {
-            // For text messages, we can append the footer directly
-            const messageWithFooter = `${message.text}\n\n${footer}`;
-            // Don't use parse_mode to avoid entity parsing errors
-            await bot.sendMessage(channel.id, messageWithFooter);
-          } else if (message.caption && footer && (message.photo || message.video || message.document || message.animation)) {
-            // For media with caption, we can append the footer to the caption
-            const captionWithFooter = `${message.caption || ''}\n\n${footer}`;
-            
-            if (message.photo) {
-              // Get the largest photo (last in the array)
-              const photo = message.photo[message.photo.length - 1];
-              await bot.sendPhoto(channel.id, photo.file_id, {
-                caption: captionWithFooter
-              });
-            } else if (message.video) {
-              await bot.sendVideo(channel.id, message.video.file_id, {
-                caption: captionWithFooter
-              });
-            } else if (message.document) {
-              await bot.sendDocument(channel.id, message.document.file_id, {
-                caption: captionWithFooter
-              });
-            } else if (message.animation) {
-              await bot.sendAnimation(channel.id, message.animation.file_id, {
-                caption: captionWithFooter
-              });
-            }
-          } else {
-            // For other types of messages or when no footer, just copy the original
-            await bot.copyMessage(channel.id, chatId, message.message_id);
-            
-            // If there's a footer but couldn't be added directly, send it as a follow-up
-            if (footer && !message.text && !message.caption) {
-              // Don't use parse_mode to avoid entity parsing errors
-              await bot.sendMessage(channel.id, footer);
-            }
-          }
-          
-          forwardedCount++;
-        } catch (error) {
-          failedCount++;
-          const errorMessage = (error as any).response?.body?.description || (error as Error).message;
-          console.error(`Failed to forward message to channel ${channel.id}:`, errorMessage);
-          await bot.sendMessage(chatId, `Failed to forward to ${channel.title || channel.id}. Error: ${errorMessage}`);
-        }
-      }
-      
-      if (forwardedCount > 0) {
-        const statusMessage = `✅ Message forwarded to ${forwardedCount} channel${forwardedCount > 1 ? 's' : ''}${
-          failedCount > 0 ? ` (${failedCount} failed)` : ''
-        }`;
-        await bot.sendMessage(chatId, statusMessage);
-      } else if (failedCount > 0) {
-        await bot.sendMessage(chatId, `❌ Failed to forward message to any channel.`);
-      } else {
-        await bot.sendMessage(chatId, `ℹ️ No channels to forward to.`);
+
+  // Handle channel add mode
+  if (awaitingChannelAdd) {
+    if (message.text && (message.text.startsWith('-100') || message.text.startsWith('@'))) {
+      try {
+        await addChannelHint(message.text.trim());
+        awaitingChannelAdd = false;
+        await bot.sendMessage(chatId, '✅ Channel added successfully!');
+        await showMainMenu(bot, chatId);
+      } catch (error) {
+        await bot.sendMessage(chatId, `❌ Error adding channel: ${(error as Error).message}`);
       }
     } else {
-      await bot.sendMessage(chatId, 'No channels found. Use /add_channel to add channels where the bot is an admin.');
+      await bot.sendMessage(chatId, '❌ Please send a valid channel ID (e.g., -1001234567890) or username (e.g., @channelname)');
     }
-  } catch (error) {
-    console.error('Error during forwarding:', error);
-    await bot.sendMessage(chatId, `Error during forwarding: ${(error as Error).message}`);
+    return;
   }
+
+  // Handle channel remove mode
+  if (awaitingChannelRemove) {
+    if (message.text) {
+      try {
+        await removeChannel(message.text.trim());
+        awaitingChannelRemove = false;
+        await bot.sendMessage(chatId, '✅ Channel removed successfully!');
+        await showMainMenu(bot, chatId);
+      } catch (error) {
+        await bot.sendMessage(chatId, `❌ Error removing channel: ${(error as Error).message}`);
+      }
+    } else {
+      await bot.sendMessage(chatId, '❌ Please send a valid channel ID');
+    }
+    return;
+  }
+
+  // If we get here, it's an unrecognized message
+  await bot.sendMessage(chatId, 
+    '❓ I don\'t understand that command.\n\n' +
+    'Use the menu below or send /help for assistance:',
+    { reply_markup: createSendNowMenu() }
+  );
 }
 
 /**
@@ -413,6 +504,10 @@ export async function handleMessage(message: Message) {
  */
 export async function handleCallbackQuery(callbackQuery: CallbackQuery) {
   const userId = callbackQuery.from.id;
+  const chatId = callbackQuery.message?.chat.id;
+  const data = callbackQuery.data;
+  
+  if (!chatId || !data) return;
   
   if (!isAdmin(userId)) {
     await bot.answerCallbackQuery(callbackQuery.id, {
@@ -423,14 +518,216 @@ export async function handleCallbackQuery(callbackQuery: CallbackQuery) {
   }
   
   try {
-    // Let the scheduling system handle the callback
-    await handleSchedulingCallback(bot, callbackQuery);
+    await bot.answerCallbackQuery(callbackQuery.id);
+    
+    // Handle menu navigation
+    switch (data) {
+      case 'main_menu':
+        await showMainMenu(bot, chatId);
+        break;
+        
+      case 'sendnow_mode':
+        awaitingSendNow = true;
+        await bot.sendMessage(chatId, 
+          '📤 **Send Now Mode Active**\n\n' +
+          'Send me any content and I\'ll forward it immediately to all channels.\n\n' +
+          '✋ Send /cancel to exit.',
+          { parse_mode: 'Markdown' }
+        );
+        break;
+        
+      case 'sendnow_ready':
+        awaitingSendNow = true;
+        await bot.sendMessage(chatId, 
+          '📤 **Ready to Forward**\n\n' +
+          'Send your content now...',
+          { parse_mode: 'Markdown' }
+        );
+        break;
+        
+      case 'schedule_menu':
+        const fakeMessage = { chat: { id: chatId }, from: { id: userId } } as Message;
+        await handleScheduleCommand(bot, fakeMessage);
+        break;
+        
+      case 'manage_posts':
+        const fakeMessage2 = { chat: { id: chatId }, from: { id: userId } } as Message;
+        await handleManagePostsCommand(bot, fakeMessage2);
+        break;
+        
+      case 'my_schedules':
+        const fakeMessage3 = { chat: { id: chatId }, from: { id: userId } } as Message;
+        await handleMySchedulesCommand(bot, fakeMessage3);
+        break;
+        
+      case 'channel_settings':
+        await bot.sendMessage(chatId, 
+          '🔧 **Channel Settings**\n\nManage your forwarding channels:',
+          { 
+            parse_mode: 'Markdown',
+            reply_markup: createChannelMenu()
+          }
+        );
+        break;
+        
+      case 'view_channels':
+        const fakeMessage4 = { chat: { id: chatId }, from: { id: userId } } as Message;
+        await handleChannelCommand(bot, fakeMessage4);
+        break;
+        
+      case 'add_channel':
+        awaitingChannelAdd = true;
+        await bot.sendMessage(chatId, 
+          '➕ **Add Channel**\n\n' +
+          'Send me the channel ID (e.g., -1001234567890) or username (e.g., @channelname)\n\n' +
+          '💡 To find channel ID: Forward a message from the channel to @userinfobot\n\n' +
+          '✋ Send /cancel to abort.',
+          { parse_mode: 'Markdown' }
+        );
+        break;
+        
+      case 'remove_channel':
+        awaitingChannelRemove = true;
+        await bot.sendMessage(chatId, 
+          '➖ **Remove Channel**\n\n' +
+          'Send me the channel ID to remove\n\n' +
+          '✋ Send /cancel to abort.',
+          { parse_mode: 'Markdown' }
+        );
+        break;
+        
+      case 'bot_settings':
+        await bot.sendMessage(chatId, 
+          '⚙️ **Bot Settings**\n\nConfigure bot options:',
+          { 
+            parse_mode: 'Markdown',
+            reply_markup: createBotSettingsMenu()
+          }
+        );
+        break;
+        
+      case 'set_footer':
+        awaitingFooter = true;
+        await bot.sendMessage(chatId, 
+          '📝 **Set Footer**\n\n' +
+          'Send me the footer text to append to all forwarded messages.\n\n' +
+          '✋ Send /cancel to abort.',
+          { parse_mode: 'Markdown' }
+        );
+        break;
+        
+      case 'clear_footer':
+        try {
+          await clearFooter();
+          await bot.sendMessage(chatId, '✅ Footer cleared successfully!');
+          await showMainMenu(bot, chatId);
+        } catch (error) {
+          await bot.sendMessage(chatId, `❌ Error clearing footer: ${(error as Error).message}`);
+        }
+        break;
+        
+      case 'wake_db':
+        try {
+          const { wakeUpDatabase } = await import('../lib/db-health');
+          await bot.sendMessage(chatId, '🔄 Waking up database...');
+          const awakened = await wakeUpDatabase();
+          await bot.sendMessage(chatId, awakened ? '✅ Database is awake!' : '❌ Failed to wake database');
+        } catch (error) {
+          await bot.sendMessage(chatId, `❌ Error: ${(error as Error).message}`);
+        }
+        break;
+        
+      case 'db_status':
+        try {
+          const { getDatabaseStatus } = await import('../lib/db-health');
+          const status = await getDatabaseStatus();
+          await bot.sendMessage(chatId, `📊 **Database Status**\n\n${status}`, { parse_mode: 'Markdown' });
+        } catch (error) {
+          await bot.sendMessage(chatId, `❌ Error: ${(error as Error).message}`);
+        }
+        break;
+        
+      case 'help_menu':
+        await bot.sendMessage(chatId, getHelpText('commands'), {
+          parse_mode: 'Markdown',
+          reply_markup: createHelpMenu()
+        });
+        break;
+        
+      case 'help_sending':
+        await bot.sendMessage(chatId, getHelpText('sending'), { parse_mode: 'Markdown' });
+        break;
+        
+      case 'help_scheduling':
+        await bot.sendMessage(chatId, getHelpText('scheduling'), { parse_mode: 'Markdown' });
+        break;
+        
+      case 'help_channels':
+        await bot.sendMessage(chatId, getHelpText('channels'), { parse_mode: 'Markdown' });
+        break;
+        
+      case 'help_commands':
+        await bot.sendMessage(chatId, getHelpText('commands'), { parse_mode: 'Markdown' });
+        break;
+        
+      default:
+        // Let the scheduling system handle it
+        await handleSchedulingCallback(bot, callbackQuery);
+        break;
+    }
+    
   } catch (error) {
     console.error('Error handling callback query:', error);
     await bot.answerCallbackQuery(callbackQuery.id, {
       text: 'An error occurred. Please try again.',
       show_alert: true
     });
+  }
+}
+
+/**
+ * Handle /channel command (moved to separate function)
+ */
+async function handleChannelCommand(bot: TelegramBot, message: Message): Promise<void> {
+  const chatId = message.chat.id;
+  
+  try {
+    const storedChannels = await loadChannels();
+    if (storedChannels.length > 0) {
+      // Get chat info for each stored channel
+      const channelDetails = await Promise.all(storedChannels.map(async (id: string) => {
+        try {
+          const chat = await bot.getChat(id);
+          const botMember = await bot.getChatMember(id, (await bot.getMe()).id);
+          const status = botMember.status === 'administrator' || botMember.status === 'creator' 
+            ? '✅ (admin)' 
+            : '❌ (not admin)';
+          return `• ${chat.title || chat.username || id} ${status}`;
+        } catch (error) {
+          return `• ${id} ❌ (cannot access)`;
+        }
+      }));
+      
+      await bot.sendMessage(
+        chatId,
+        `📋 **Connected Channels (${storedChannels.length})**\n\n${channelDetails.join('\n')}\n\n💡 Only channels with admin rights will receive forwards.`,
+        { 
+          parse_mode: 'Markdown',
+          reply_markup: createChannelMenu()
+        }
+      );
+    } else {
+      await bot.sendMessage(chatId, 
+        '📋 **No Channels Connected**\n\nUse "➕ Add Channel" to connect your first channel.',
+        { 
+          parse_mode: 'Markdown',
+          reply_markup: createChannelMenu()
+        }
+      );
+    }
+  } catch (error) {
+    console.error('Error fetching channel details:', error);
+    await bot.sendMessage(chatId, `❌ Error fetching channels: ${(error as Error).message}`);
   }
 }
 
