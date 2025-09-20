@@ -52,7 +52,11 @@ async function setupWebhook() {
         { command: 'add_channel', description: 'Add a channel to the forwarding list (use with channel ID)' },
         { command: 'remove_channel', description: 'Remove a channel from the forwarding list (use with channel ID)' },
         { command: 'footer', description: 'Set a footer text to append to all forwarded messages' },
-        { command: 'clearfooter', description: 'Clear the current footer' }
+        { command: 'clearfooter', description: 'Clear the current footer' },
+        { command: 'schedule', description: 'Manage post scheduling system' },
+        { command: 'manage_posts', description: 'Add or manage saved posts for scheduling' },
+        { command: 'my_schedules', description: 'View and manage your active schedules' },
+        { command: 'trigger_posts', description: 'Manually trigger scheduled posts (admin only)' }
       ]
     });
     

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { handleMessage } from '../../../../scripts/bot';
+import { handleMessage, handleCallbackQuery } from '../../../../scripts/bot';
 import { isAdmin } from '../../../../lib/telegram';
 import { Update } from 'node-telegram-bot-api';
 import { loadChannels, addChannel } from '../../../../lib/storage';
@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
     const update: Update = await request.json();
     console.log('Received update:', JSON.stringify(update));
 
-    // Process the update if it contains a message
+    // Process the update if it contains a message or callback query
     if (update.message) {
       // Check if the message is from an admin
       const userId = update.message.from?.id;
@@ -101,6 +101,38 @@ export async function POST(request: NextRequest) {
       // Check if storage changed
       const updatedChannels = await loadChannels();
       console.log('Updated stored channels:', updatedChannels);
+      
+      return NextResponse.json(
+        { success: true },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-store, max-age=0'
+          }
+        }
+      );
+    } else if (update.callback_query) {
+      // Handle callback queries (inline keyboard button presses)
+      const userId = update.callback_query.from?.id;
+      console.log(`Callback query from user ID: ${userId}`);
+      
+      if (!isAdmin(userId)) {
+        console.log(`Unauthorized callback query from user ${userId}`);
+        return NextResponse.json(
+          { success: false, error: 'Unauthorized' }, 
+          { 
+            status: 403,
+            headers: {
+              'Content-Type': 'application/json',
+              'Cache-Control': 'no-store, max-age=0'
+            }
+          }
+        );
+      }
+      
+      // Handle the callback query
+      console.log('Processing callback query from admin user');
+      await handleCallbackQuery(update.callback_query);
       
       return NextResponse.json(
         { success: true },

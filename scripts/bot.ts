@@ -1,7 +1,15 @@
 import bot from '../lib/telegram';
 import { isAdmin, getAdminChannels, addChannelHint } from '../lib/telegram';
 import { loadChannels, removeChannel, loadFooter, saveFooter, clearFooter } from '../lib/storage';
-import { Message } from 'node-telegram-bot-api';
+import { Message, CallbackQuery } from 'node-telegram-bot-api';
+import {
+  handleScheduleCommand,
+  handleManagePostsCommand,
+  handleMySchedulesCommand,
+  handleSchedulingCallback,
+  handleSchedulingMessage
+} from '../lib/scheduling';
+import { startScheduler, triggerScheduledPosts } from '../lib/scheduler';
 
 const ADMIN_USER_ID = process.env.ADMIN_USER_ID;
 
@@ -18,7 +26,13 @@ export async function setupBotCommands() {
       { command: 'add_channel', description: 'Add a channel to the forwarding list (use with channel ID)' },
       { command: 'remove_channel', description: 'Remove a channel from the forwarding list (use with channel ID)' },
       { command: 'footer', description: 'Set a footer text to append to all forwarded messages' },
-      { command: 'clearfooter', description: 'Clear the current footer' }
+      { command: 'clearfooter', description: 'Clear the current footer' },
+              { command: 'schedule', description: 'Manage post scheduling system' },
+        { command: 'manage_posts', description: 'Add or manage saved posts for scheduling' },
+        { command: 'my_schedules', description: 'View and manage your active schedules' },
+        { command: 'trigger_posts', description: 'Manually trigger scheduled posts (admin only)' },
+        { command: 'wakedb', description: 'Wake up the database if it\'s sleeping (admin only)' },
+        { command: 'dbstatus', description: 'Check database health status (admin only)' }
     ]);
     console.log('Bot commands have been set up successfully');
   } catch (error) {
@@ -39,18 +53,30 @@ export async function handleMessage(message: Message) {
     return;
   }
 
+  // Check if this message should be handled by the scheduling system
+  const isSchedulingHandled = await handleSchedulingMessage(bot, message);
+  if (isSchedulingHandled) {
+    return;
+  }
+
   // Handle /start command
   if (message.text?.startsWith('/start')) {
     try {
       const welcomeMessage = `👋 Welcome to the Telegram Autoforward Bot!\n\n` +
                             `This bot forwards your messages to all channels where it has admin rights.\n\n` +
-                            `Available commands:\n` +
+                            `📋 **Channel Management:**\n` +
                             `- /channel - Show all stored channels with their admin status\n` +
                             `- /add_channel - Add a channel to the forwarding list\n` +
-                            `- /remove_channel - Remove a channel from the forwarding list\n` +
+                            `- /remove_channel - Remove a channel from the forwarding list\n\n` +
+                            `⏰ **Scheduling System:**\n` +
+                            `- /schedule - Manage post scheduling system\n` +
+                            `- /manage_posts - Add or manage saved posts for scheduling\n` +
+                            `- /my_schedules - View and manage your active schedules\n\n` +
+                            `🔧 **Other Commands:**\n` +
                             `- /footer - Set a footer text to append to all forwarded messages\n` +
                             `- /clearfooter - Clear the current footer\n\n` +
-                            `To forward a message, simply send it to this bot.`;
+                            `📨 To forward a message immediately, simply send it to this bot.\n` +
+                            `⏰ To schedule automatic posting, use the /schedule command.`;
       
       await bot.sendMessage(chatId, welcomeMessage);
     } catch (error) {
@@ -202,6 +228,68 @@ export async function handleMessage(message: Message) {
     return;
   }
 
+  // Handle /schedule command
+  if (message.text?.startsWith('/schedule')) {
+    await handleScheduleCommand(bot, message);
+    return;
+  }
+
+  // Handle /manage_posts command
+  if (message.text?.startsWith('/manage_posts')) {
+    await handleManagePostsCommand(bot, message);
+    return;
+  }
+
+  // Handle /my_schedules command
+  if (message.text?.startsWith('/my_schedules')) {
+    await handleMySchedulesCommand(bot, message);
+    return;
+  }
+
+  // Handle /trigger_posts command (for testing)
+  if (message.text?.startsWith('/trigger_posts')) {
+    try {
+      const parts = message.text.split(' ');
+      const time = parts.length > 1 ? parts[1] : undefined;
+      const result = await triggerScheduledPosts(bot, time);
+      await bot.sendMessage(chatId, result);
+    } catch (error) {
+      await bot.sendMessage(chatId, `❌ Error: ${(error as Error).message}`);
+    }
+    return;
+  }
+
+  // Handle /wakedb command (wake up database)
+  if (message.text?.startsWith('/wakedb')) {
+    try {
+      await bot.sendMessage(chatId, '🔄 Attempting to wake up database...');
+      
+      const { wakeUpDatabase } = await import('../lib/db-health');
+      const awakened = await wakeUpDatabase();
+      
+      if (awakened) {
+        await bot.sendMessage(chatId, '✅ Database is now active!');
+      } else {
+        await bot.sendMessage(chatId, '❌ Failed to wake up database. Please check your configuration.');
+      }
+    } catch (error) {
+      await bot.sendMessage(chatId, `❌ Error waking database: ${(error as Error).message}`);
+    }
+    return;
+  }
+
+  // Handle /dbstatus command (check database status)
+  if (message.text?.startsWith('/dbstatus')) {
+    try {
+      const { getDatabaseStatus } = await import('../lib/db-health');
+      const status = await getDatabaseStatus();
+      await bot.sendMessage(chatId, `📊 **Database Status**\n\n${status}`, { parse_mode: 'Markdown' });
+    } catch (error) {
+      await bot.sendMessage(chatId, `❌ Error checking database status: ${(error as Error).message}`);
+    }
+    return;
+  }
+
   // Handle footer text input if we're awaiting it
   if (awaitingFooter) {
     try {
@@ -317,5 +405,50 @@ export async function handleMessage(message: Message) {
   } catch (error) {
     console.error('Error during forwarding:', error);
     await bot.sendMessage(chatId, `Error during forwarding: ${(error as Error).message}`);
+  }
+}
+
+/**
+ * Handle callback queries (inline keyboard button presses)
+ */
+export async function handleCallbackQuery(callbackQuery: CallbackQuery) {
+  const userId = callbackQuery.from.id;
+  
+  if (!isAdmin(userId)) {
+    await bot.answerCallbackQuery(callbackQuery.id, {
+      text: 'You are not authorized to use this bot.',
+      show_alert: true
+    });
+    return;
+  }
+  
+  try {
+    // Let the scheduling system handle the callback
+    await handleSchedulingCallback(bot, callbackQuery);
+  } catch (error) {
+    console.error('Error handling callback query:', error);
+    await bot.answerCallbackQuery(callbackQuery.id, {
+      text: 'An error occurred. Please try again.',
+      show_alert: true
+    });
+  }
+}
+
+/**
+ * Initialize the bot and start the scheduler
+ */
+export async function initializeBot() {
+  try {
+    console.log('Initializing bot...');
+    
+    // Set up bot commands
+    await setupBotCommands();
+    
+    // Start the post scheduler
+    startScheduler(bot);
+    
+    console.log('Bot initialized successfully');
+  } catch (error) {
+    console.error('Error initializing bot:', error);
   }
 }

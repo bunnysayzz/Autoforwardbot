@@ -11,7 +11,7 @@ if (!fs.existsSync('.env.local')) {
 dotenv.config({ path: '.env.local' });
 
 import bot from '../lib/telegram';
-import { handleMessage, setupBotCommands } from './bot';
+import { handleMessage, handleCallbackQuery, initializeBot } from './bot';
 import { isAdmin, getAdminChannels } from '../lib/telegram';
 import { initializeDb } from '../lib/storage';
 
@@ -27,24 +27,30 @@ bot.startPolling({ polling: true });
 
 console.log('Bot started in polling mode...');
 
-// Setup bot commands to be shown in the menu
-setupBotCommands();
-
 // Send a startup message to the admin
 (async () => {
   try {
     console.log('Initializing database...');
     await initializeDb();
     console.log('Database initialized successfully.');
+    
+    // Initialize bot (setup commands and start scheduler)
+    await initializeBot();
+    
     const message = `🤖 Bot started in polling mode\n\n` +
-                   `Commands available:\n` +
-                   `- /start - Start the bot and get welcome message\n` +
+                   `📋 **Channel Management:**\n` +
                    `- /channel - Show all stored channels with their admin status\n` +
                    `- /add_channel - Add a channel to the forwarding list\n` +
-                   `- /remove_channel - Remove a channel from the forwarding list\n` +
+                   `- /remove_channel - Remove a channel from the forwarding list\n\n` +
+                   `⏰ **Scheduling System:**\n` +
+                   `- /schedule - Manage post scheduling system\n` +
+                   `- /manage_posts - Add or manage saved posts for scheduling\n` +
+                   `- /my_schedules - View and manage your active schedules\n\n` +
+                   `🔧 **Other Commands:**\n` +
                    `- /footer - Set a footer text to append to all forwarded messages\n` +
                    `- /clearfooter - Clear the current footer\n\n` +
-                   `To forward a message to all channels, simply send it to this bot.`;
+                   `📨 To forward a message immediately, simply send it to this bot.\n` +
+                   `⏰ The scheduling system is now active and will automatically forward scheduled posts!`;
     
     await bot.sendMessage(ADMIN_USER_ID, message);
     
@@ -77,6 +83,21 @@ bot.on('message', async (msg) => {
         msg.chat.id,
         `Error processing message: ${(error as Error).message}`
       );
+    }
+  }
+});
+
+// Handle callback queries (inline keyboard button presses)
+bot.on('callback_query', async (callbackQuery) => {
+  try {
+    await handleCallbackQuery(callbackQuery);
+  } catch (error) {
+    console.error('Error handling callback query:', error);
+    if (isAdmin(callbackQuery.from.id)) {
+      await bot.answerCallbackQuery(callbackQuery.id, {
+        text: 'An error occurred. Please try again.',
+        show_alert: true
+      });
     }
   }
 });

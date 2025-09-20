@@ -25,12 +25,44 @@ const keepAlive = async () => {
     console.log('Astra DB keep-alive ping successful');
   } catch (error) {
     console.error('Astra DB keep-alive ping failed:', error);
+    // Try to wake up the database if it's sleeping
+    await wakeUpDatabase();
   }
 };
 
-// Set up a keep-alive interval (runs every 40 hours to stay under the 48-hour pause threshold)
-const KEEP_ALIVE_INTERVAL = 40 * 60 * 60 * 1000; // 40 hours
+// Function to wake up the database if it's sleeping
+const wakeUpDatabase = async () => {
+  try {
+    console.log('Attempting to wake up Astra DB...');
+    // Try multiple simple operations to wake up the database
+    await db.command({ findCollections: {} });
+    await db.command({ ping: 1 });
+    console.log('Astra DB wake-up successful');
+  } catch (error) {
+    console.error('Failed to wake up Astra DB:', error);
+  }
+};
+
+// Health check function that runs more frequently
+const healthCheck = async () => {
+  try {
+    const timeSinceLastActivity = Date.now() - lastActivityTime;
+    
+    // If it's been more than 2 hours since last activity, do a keep-alive
+    if (timeSinceLastActivity > 2 * 60 * 60 * 1000) {
+      console.log('Database inactive for 2+ hours, performing keep-alive...');
+      await keepAlive();
+    }
+  } catch (error) {
+    console.error('Health check failed:', error);
+  }
+};
+
+// Set up a keep-alive interval (runs every 4 hours to prevent sleep)
+const KEEP_ALIVE_INTERVAL = 4 * 60 * 60 * 1000; // 4 hours
+const HEALTH_CHECK_INTERVAL = 30 * 60 * 1000; // 30 minutes
 let keepAliveInterval: NodeJS.Timeout | null = null;
+let healthCheckInterval: NodeJS.Timeout | null = null;
 
 // Function to start the keep-alive mechanism
 export const startKeepAlive = () => {
@@ -39,9 +71,13 @@ export const startKeepAlive = () => {
   // Initial ping
   keepAlive();
   
-  // Set up interval for subsequent pings
+  // Set up interval for keep-alive pings (every 4 hours)
   keepAliveInterval = setInterval(keepAlive, KEEP_ALIVE_INTERVAL);
-  console.log('Astra DB keep-alive mechanism started');
+  
+  // Set up interval for health checks (every 30 minutes)
+  healthCheckInterval = setInterval(healthCheck, HEALTH_CHECK_INTERVAL);
+  
+  console.log('Astra DB keep-alive mechanism started (4h intervals + 30min health checks)');
 };
 
 // Function to stop the keep-alive mechanism
@@ -49,8 +85,12 @@ export const stopKeepAlive = () => {
   if (keepAliveInterval) {
     clearInterval(keepAliveInterval);
     keepAliveInterval = null;
-    console.log('Astra DB keep-alive mechanism stopped');
   }
+  if (healthCheckInterval) {
+    clearInterval(healthCheckInterval);
+    healthCheckInterval = null;
+  }
+  console.log('Astra DB keep-alive mechanism stopped');
 };
 
 // Start the keep-alive mechanism when the module loads
@@ -62,11 +102,25 @@ process.on('SIGINT', () => {
   process.exit(0);
 });
 
-// Get a collection with activity tracking
+// Get a collection with activity tracking and auto-wake
 export const getCollection = async (collectionName: string) => {
-  // Update last activity time
-  lastActivityTime = Date.now();
-  return db.collection(collectionName);
+  try {
+    // Update last activity time
+    lastActivityTime = Date.now();
+    const collection = db.collection(collectionName);
+    
+    // Test the collection to ensure the database is awake
+    await collection.options();
+    
+    return collection;
+  } catch (error) {
+    console.log(`Database might be sleeping, attempting to wake up for collection: ${collectionName}`);
+    await wakeUpDatabase();
+    
+    // Update last activity time after wake-up
+    lastActivityTime = Date.now();
+    return db.collection(collectionName);
+  }
 };
 
 export default {
