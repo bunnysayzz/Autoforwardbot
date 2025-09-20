@@ -213,16 +213,16 @@ export function getHelpText(topic: string): string {
 
 1. Click "⏰ Schedule Posts" from main menu
 2. Follow the setup wizard:
-   - Set times (e.g., 9:30 AM, 6:00 PM)
+   - Set times (e.g., 9:30, 18:00)
    - Choose how many posts per time
    - Select which saved posts to use
 3. Your posts will be sent automatically!
 
-**Time formats supported:**
-• 9:30 or 09:30 (24-hour)
-• 9:30 AM or 2:15 PM  
-• 9 AM or 2 PM
-• 0930 or 1415`;
+**Time format (24-hour only):**
+• 9:30 (9:30 AM)
+• 14:30 (2:30 PM)
+• 18:00 (6:00 PM)
+• 20:55 (8:55 PM)`;
 
     case 'channels':
       return `🔧 **Channel Setup**

@@ -14,77 +14,20 @@ import {
 } from './storage';
 
 /**
- * Parse time string to 24-hour format
+ * Parse time string to 24-hour format - ONLY accepts 24-hour format HH:MM
  */
 export function parseTimeString(timeStr: string): string | null {
-  // Remove any whitespace and convert to lowercase
-  const cleaned = timeStr.trim().toLowerCase();
+  // Remove any whitespace
+  const cleaned = timeStr.trim();
   
-  // Regex patterns for different time formats
-  const patterns = [
-    /^([0-1]?[0-9]|2[0-3]):([0-5][0-9])$/, // HH:MM (24-hour)
-    /^([1-9]|1[0-2]):([0-5][0-9])\s*(am|pm)$/, // H:MM AM/PM
-    /^([1-9]|1[0-2])\s*(am|pm)$/, // H AM/PM
-    /^([0-1]?[0-9]|2[0-3])\.([0-5][0-9])$/, // HH.MM (24-hour with dots)
-    /^([0-1]?[0-9]|2[0-3])([0-5][0-9])$/ // HHMM (24-hour no separator)
-  ];
+  // Only accept 24-hour format HH:MM or H:MM
+  const pattern = /^([0-1]?[0-9]|2[0-3]):([0-5][0-9])$/;
   
-  // Try 24-hour format first
-  const match24 = cleaned.match(patterns[0]);
-  if (match24) {
-    const hours = parseInt(match24[1], 10);
-    const minutes = parseInt(match24[2], 10);
+  const match = cleaned.match(pattern);
+  if (match) {
+    const hours = parseInt(match[1], 10);
+    const minutes = parseInt(match[2], 10);
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-  }
-  
-  // Try 12-hour format with AM/PM
-  const match12 = cleaned.match(patterns[1]);
-  if (match12) {
-    let hours = parseInt(match12[1], 10);
-    const minutes = parseInt(match12[2], 10);
-    const ampm = match12[3];
-    
-    if (ampm === 'pm' && hours !== 12) hours += 12;
-    if (ampm === 'am' && hours === 12) hours = 0;
-    
-    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-  }
-  
-  // Try simple hour format with AM/PM
-  const matchSimple = cleaned.match(patterns[2]);
-  if (matchSimple) {
-    let hours = parseInt(matchSimple[1], 10);
-    const ampm = matchSimple[2];
-    
-    if (ampm === 'pm' && hours !== 12) hours += 12;
-    if (ampm === 'am' && hours === 12) hours = 0;
-    
-    return `${hours.toString().padStart(2, '0')}:00`;
-  }
-  
-  // Try 24-hour format with dots
-  const matchDot = cleaned.match(patterns[3]);
-  if (matchDot) {
-    const hours = parseInt(matchDot[1], 10);
-    const minutes = parseInt(matchDot[2], 10);
-    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-  }
-  
-  // Try 24-hour format without separator
-  const matchNoSep = cleaned.match(patterns[4]);
-  if (matchNoSep) {
-    const timeStr = matchNoSep[0];
-    if (timeStr.length === 3) {
-      // HMM format (e.g., 930 for 9:30)
-      const hours = parseInt(timeStr[0], 10);
-      const minutes = parseInt(timeStr.substring(1), 10);
-      return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-    } else if (timeStr.length === 4) {
-      // HHMM format (e.g., 0930 for 9:30)
-      const hours = parseInt(timeStr.substring(0, 2), 10);
-      const minutes = parseInt(timeStr.substring(2), 10);
-      return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-    }
   }
   
   return null;
@@ -422,11 +365,11 @@ async function startScheduleCreation(bot: TelegramBot, chatId: number, userId: s
   await bot.sendMessage(chatId,
     '⏰ *Create New Schedule*\n\n' +
     'Let\'s set up your posting schedule. First, tell me what time(s) you want posts to be sent.\n\n' +
-    '📝 *Examples:*\n' +
-    '• `9:30` or `09:30` (24-hour format)\n' +
-    '• `9:30 AM` or `2:15 PM` (12-hour format)\n' +
-    '• `9 AM` or `2 PM` (simple format)\n' +
-    '• `0930` or `1415` (no separator)\n\n' +
+    '📝 *24-Hour Format Only:*\n' +
+    '• `9:30` (9:30 AM)\n' +
+    '• `14:30` (2:30 PM)\n' +
+    '• `20:55` (8:55 PM)\n' +
+    '• `08:00` (8:00 AM)\n\n' +
     '💡 You can send multiple times, one per message. When done, send `/done` to continue.',
     { parse_mode: 'Markdown' }
   );
@@ -652,11 +595,11 @@ async function handleScheduleSetupMessage(bot: TelegramBot, message: Message, us
     const parsedTime = parseTimeString(text);
     if (!parsedTime) {
       await bot.sendMessage(chatId,
-        '❌ Invalid time format. Please use formats like:\n' +
-        '• `9:30` or `09:30`\n' +
-        '• `9:30 AM` or `2:15 PM`\n' +
-        '• `9 AM` or `2 PM`\n' +
-        '• `0930` or `1415`',
+        '❌ Invalid time format. Please use 24-hour format only:\n' +
+        '• `9:30` (9:30 AM)\n' +
+        '• `14:30` (2:30 PM)\n' +
+        '• `20:55` (8:55 PM)\n' +
+        '• `08:00` (8:00 AM)',
         { parse_mode: 'Markdown' }
       );
       return true;

@@ -32,10 +32,19 @@ async function testSchedulingSystem() {
     await initializeSchedulingDb();
     console.log('✅ Database initialized\n');
     
-    // Test time parsing
+    // Test time parsing (24-hour format only)
     console.log('2. Testing time parsing...');
-    const testTimes = ['9:30', '09:30', '9:30 AM', '2:15 PM', '1430', '0930'];
+    const testTimes = ['9:30', '09:30', '14:30', '20:55', '08:00'];
+    const invalidTimes = ['9:30 AM', '2:15 PM', '1430', '0930', '25:00', '12:60'];
+    
+    console.log('   Valid 24-hour formats:');
     testTimes.forEach(time => {
+      const parsed = parseTimeString(time);
+      console.log(`   ${time} -> ${parsed}`);
+    });
+    
+    console.log('   Invalid formats (should return null):');
+    invalidTimes.forEach(time => {
       const parsed = parseTimeString(time);
       console.log(`   ${time} -> ${parsed}`);
     });
