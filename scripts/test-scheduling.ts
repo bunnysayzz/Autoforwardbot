@@ -50,37 +50,34 @@ async function testSchedulingSystem() {
     });
     console.log('✅ Time parsing works\n');
     
-    // Test creating a sample post
+    // Test creating a sample post (SAFE - uses dummy user ID)
     console.log('3. Creating sample post...');
-    const testUserId = process.env.ADMIN_USER_ID;
-    if (!testUserId) {
-      throw new Error('ADMIN_USER_ID not found');
-    }
+    const testUserId = 'dummy_test_user_id'; // Using dummy ID to prevent real posts
     
     const postId = await saveScheduledPost({
       userId: testUserId,
       messageType: 'text',
-      content: 'This is a test scheduled post created automatically for testing the scheduling system!',
-      title: 'Test Post'
+      content: '[SAFE TEST POST - WILL NOT BE SENT TO REAL CHANNELS]',
+      title: 'Safe Test Post'
     });
-    console.log(`✅ Created post with ID: ${postId}\n`);
+    console.log(`✅ Created safe test post with ID: ${postId}\n`);
     
     // Test getting user posts
     console.log('4. Testing post retrieval...');
     const userPosts = await getUserScheduledPosts(testUserId);
     console.log(`✅ Found ${userPosts.length} posts for user\n`);
     
-    // Test creating a schedule
+    // Test creating a schedule (SAFE - inactive to prevent execution)
     console.log('5. Creating sample schedule...');
     const currentTime = getCurrentTime();
     const scheduleId = await saveUserSchedule({
-      userId: testUserId,
+      userId: testUserId, // Dummy user ID
       times: [currentTime],
       postIds: [postId],
       postsPerTime: 1,
-      isActive: true
+      isActive: false // INACTIVE to prevent execution
     });
-    console.log(`✅ Created schedule with ID: ${scheduleId}\n`);
+    console.log(`✅ Created safe test schedule with ID: ${scheduleId}\n`);
     
     // Test getting user schedules
     console.log('6. Testing schedule retrieval...');

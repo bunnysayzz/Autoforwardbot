@@ -116,7 +116,8 @@ export async function setupBotCommands() {
         { command: 'trigger_posts', description: 'Manually trigger scheduled posts (admin only)' },
         { command: 'time', description: 'Check current IST and UTC time' },
         { command: 'debug_schedules', description: 'Debug: Show all schedules in database' },
-        { command: 'test_random', description: 'Test random post selection algorithm' },
+        { command: 'delete_schedules_only', description: 'Delete all schedules but keep saved posts' },
+        { command: 'cleanup_all', description: 'DANGER: Delete all schedules and saved posts' },
         { command: 'sendnow', description: 'Forward messages immediately' },
         { command: 'menu', description: 'Show main menu with options' },
         { command: 'help', description: 'Show help and instructions' }
@@ -476,52 +477,107 @@ export async function handleMessage(message: Message) {
     return;
   }
 
-  // Handle /test_random command (test random post selection)
-  if (message.text?.startsWith('/test_random')) {
+  // Handle /cleanup_all command (remove all schedules and saved posts)
+  if (message.text?.startsWith('/cleanup_all')) {
+    await bot.sendMessage(chatId, 
+      '⚠️ **DANGER: Complete Cleanup**\n\n' +
+      'This will permanently delete:\n' +
+      '• ALL your scheduled posts\n' +
+      '• ALL your saved posts\n' +
+      '• ALL your schedules\n\n' +
+      '❌ **This cannot be undone!**\n\n' +
+      'Reply with exactly `DELETE EVERYTHING` to confirm.',
+      { parse_mode: 'Markdown' }
+    );
+    return;
+  }
+
+  // Handle /delete_schedules_only command (remove all schedules but keep posts)
+  if (message.text?.startsWith('/delete_schedules_only')) {
     try {
-      const { getUserScheduledPosts } = await import('../lib/storage');
+      const { getAllActiveSchedules, deleteUserSchedule } = await import('../lib/storage');
       const userId = String(message.from?.id);
       
-      await bot.sendMessage(chatId, '🎲 **Testing Random Post Selection...**');
+      await bot.sendMessage(chatId, '🗑️ **Deleting all schedules...**');
       
-      const posts = await getUserScheduledPosts(userId);
+      const schedules = await getAllActiveSchedules();
+      const userSchedules = schedules.filter(s => s.userId === userId);
       
-      if (posts.length === 0) {
-        await bot.sendMessage(chatId, 
-          '❌ **No saved posts found**\n\n' +
-          'Add some posts first using `/manage_posts`'
-        );
+      if (userSchedules.length === 0) {
+        await bot.sendMessage(chatId, '✅ **No schedules found to delete**');
         return;
       }
       
-      if (posts.length < 3) {
-        await bot.sendMessage(chatId, 
-          `⚠️ **Only ${posts.length} posts found**\n\n` +
-          'Add more posts to see better randomization demo'
-        );
+      let deletedCount = 0;
+      for (const schedule of userSchedules) {
+        try {
+          await deleteUserSchedule(schedule._id, userId);
+          deletedCount++;
+        } catch (error) {
+          console.error('Error deleting schedule:', error);
+        }
       }
       
-      const count = Math.min(3, posts.length);
-      
-      // Test random selection 3 times
-      let testResults = `🎲 **Random Selection Test**\n\n` +
-        `📚 **Total Posts**: ${posts.length}\n` +
-        `🎯 **Selecting**: ${count} posts each time\n\n`;
-      
-      for (let i = 1; i <= 3; i++) {
-        // Import the same function used by scheduler
-        const { selectRandomPosts } = await import('../lib/scheduler');
-        const selected = selectRandomPosts(posts, count);
-        const titles = selected.map(post => post.title || post.content?.substring(0, 30) || 'Untitled').join(', ');
-        testResults += `**Test ${i}**: ${titles}\n\n`;
-      }
-      
-      testResults += '💡 Each test should show different posts if randomization is working!';
-      
-      await bot.sendMessage(chatId, testResults, { parse_mode: 'Markdown' });
+      await bot.sendMessage(chatId, 
+        `✅ **Cleanup Complete**\n\n` +
+        `🗑️ Deleted ${deletedCount} schedules\n` +
+        `📝 Saved posts remain untouched\n\n` +
+        `You can now create new schedules with your existing posts.`
+      );
       
     } catch (error) {
-      await bot.sendMessage(chatId, `❌ Random test error: ${(error as Error).message}`);
+      await bot.sendMessage(chatId, `❌ Cleanup error: ${(error as Error).message}`);
+    }
+    return;
+  }
+
+  // Handle confirmation for complete cleanup
+  if (message.text === 'DELETE EVERYTHING') {
+    try {
+      const { getAllActiveSchedules, deleteUserSchedule, getUserScheduledPosts, deleteScheduledPost } = await import('../lib/storage');
+      const userId = String(message.from?.id);
+      
+      await bot.sendMessage(chatId, '🔥 **Starting complete cleanup...**');
+      
+      // Delete all schedules
+      const schedules = await getAllActiveSchedules();
+      const userSchedules = schedules.filter(s => s.userId === userId);
+      let deletedSchedules = 0;
+      
+      for (const schedule of userSchedules) {
+        try {
+          await deleteUserSchedule(schedule._id, userId);
+          deletedSchedules++;
+        } catch (error) {
+          console.error('Error deleting schedule:', error);
+        }
+      }
+      
+      // Delete all saved posts
+      const posts = await getUserScheduledPosts(userId);
+      let deletedPosts = 0;
+      
+      for (const post of posts) {
+        try {
+          await deleteScheduledPost(post._id, userId);
+          deletedPosts++;
+        } catch (error) {
+          console.error('Error deleting post:', error);
+        }
+      }
+      
+      await bot.sendMessage(chatId, 
+        `✅ **Complete Cleanup Finished**\n\n` +
+        `🗑️ Deleted ${deletedSchedules} schedules\n` +
+        `📝 Deleted ${deletedPosts} saved posts\n\n` +
+        `🎉 **Fresh start!** You can now:\n` +
+        `• Add new real posts with /manage_posts\n` +
+        `• Create new schedules with /schedule\n\n` +
+        `No more test content will be sent!`
+      );
+      
+    } catch (error) {
+      await bot.sendMessage(chatId, `❌ Cleanup error: ${(error as Error).message}`);
     }
     return;
   }
